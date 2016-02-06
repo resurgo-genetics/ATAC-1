@@ -18,14 +18,12 @@ Set global options
 library(knitr)
 opts_chunk$set(echo=F, eval=F, warning=F, message=F)
 ```
+<br>    
 
 
 Github
 https://github.com/jdis24/ATAC.git
 + can't figure out how to link Rstudio project to github subdirectory, rather than home dir
-+ therefore using command line to commit
-+ for file: `git add Master_peaks/R/ATAC_peaks.Rmd \ git commit -m "changed file" \ git push`
-+ for dir: `git add Master_peaks/R \ git commit -m "updated dir" \ git push`
 <br>    
 
 #### Script Overview: Step (tool)
