@@ -1,0 +1,413 @@
+---
+title: "ATAC mapping"
+author: "JRD"
+output: html_document
+---    
+last modified: `r Sys.Date()`   
+<br>
+
+#### TO DO
++ figure out why unique read # is higher than total reads for PE map_stats files
++ add metadata: cell number (create separate table and store as .tdt in folder ?)
+
+<br>    
+
+#### R Markdown Specifications
+Set global options
+```{r setoptions, echo=F}
+library(knitr)
+opts_chunk$set(echo = FALSE, eval= FALSE, warning=F, message=F)
+```
+    
+Github    
+https://github.com/jdis24/ATAC.git    
+<br>
+
+#### Script Overview: Step (tool)
++ name = `atac_mapping_PE_2.sh`
++ Stats on fastq files (Fastqc)
++ Filter reads based on confidence of base calling (Sickle)
++ Search for and trim Illumina adapter sequences from 5' and 3' ends (Cutadapt)
++ Search for and remove PCR duplicates (Picard)
++ Map reads to mm9, keep only reads with a single best alignment (Bowtie2)
++ Orchestra:
+`bsub -q mcore -n 8 -W 16:00 ./atac_mapping_PE_2.sh . prefix`
+<br>    
+
+#### Script
++ default = hidden 
+```{r atac_mapping_PE_2.sh, engine="bash"}
+#!/bin/bash
+#
+# atac_mapping_PE_2.sh
+# AUTHOR: JRD/DPZ
+# LAST MODIFIED: 12/19/15
+#
+# run where the fastq.gz files are
+# may have to make executable with chmod +x atac_mapping_PE.sh
+# usage: ./atac_mapping_PE.sh  dir_where_fastq.gz_files_are prefix
+
+
+#### Load libraries and modules
+source ~/.bash_profile
+export R_LIBS="/groups/cbdm_lab/dp133/R_libraries"
+
+module load seq/fastqc/0.10.1
+module load seq/cutadapt/1.8.3 
+module load seq/fastx/0.0.13
+module load seq/bowtie/2.2.4
+module load seq/samtools/0.1.19
+module load seq/BEDTools/2.19.0
+module load stats/R/3.1.2
+module load seq/sickle/1.2
+
+
+#### Set working directory and prefix for output files (args)
+echo "working directory : " $1
+echo "prefix : " $2
+prefix=$2
+
+cd $1
+
+
+#### Gunzip files
+echo "Decompressing files..."
+gunzip -fv *R1.fastq.gz
+gunzip -fv *R2.fastq.gz
+mv *R1.fastq $prefix.R1.fastq
+mv *R2.fastq $prefix.R2.fastq
+
+
+#### Generate fastqc output
+echo "Running fastqc on Read1..."
+mkdir $prefix.R1.fastqc/
+fastqc -o $prefix.R1.fastqc/ $prefix.R1.fastq
+
+echo "Running fastqc on Read2..."
+mkdir $prefix.R2.fastqc/
+fastqc -o $prefix.R2.fastqc/ $prefix.R2.fastq
+
+
+#### Filter reads on quality
+echo "Filtering reads on quality..."
+sickle pe -f $prefix.R1.fastq -r $prefix.R2.fastq -o $prefix.filtered_R1.fastq -p $prefix.filtered_R2.fastq -t sanger -s $prefix.filtered_singles.fastq
+
+
+#### Clip adapters from sequences
+# e = maximum error rate, default = 0.1
+# m = minimum length, throw away reads shorter than N bases
+echo "Clipping adapter from 5' side..."
+cutadapt -g AGATGTGTATAAGAGACAG -G CTGTCTCTTATACACATCT -e 0.1 -m 20 -o $prefix.trim1_R1.fastq -p $prefix.trim1_R2.fastq $prefix.filtered_R1.fastq $prefix.filtered_R2.fastq
+
+echo "Clipping adapter from 3' side..."
+cutadapt -a AGATGTGTATAAGAGACAG -A CTGTCTCTTATACACATCT -e 0.1 -m 20 -o $prefix.trim2_R1.fastq -p $prefix.trim2_R2.fastq $prefix.trim1_R1.fastq $prefix.trim1_R2.fastq
+
+
+#### Align reads and keep only reads mapping to one location
+# -p N		number of threads to use for multi-thread software
+# -x		location of indexed genome
+# -S <>		name of .sam output file
+echo "Mapping reads to mm9..."
+bowtie2 -p 8 -x /groups/shared_databases/bowtie2_indexes/mm9 -X 1000 --fr -1 $prefix.trim2_R1.fastq -2 $prefix.trim2_R2.fastq -S $prefix.btout2.sam
+
+
+#### Keep only reads mapping to one location
+samtools view -hS -F 4 $prefix.btout2.sam > $prefix.mapped.sam # keep only mapped reads
+sed '/XS:/d' $prefix.mapped.sam > $prefix.mapped_1alignmentonly.sam # remove multiple aligned reads
+samtools view -bS $prefix.mapped_1alignmentonly.sam > $prefix.mapped_1align.bam # make a bam file
+
+
+### Remove duplicates 
+echo "Removing duplicates..."
+samtools sort $prefix.mapped_1align.bam $prefix.mapped_1align.sorted
+java -Xms1024m -jar /opt/picard-1.130/picard.jar MarkDuplicatesWithMateCigar INPUT=$prefix.mapped_1align.sorted.bam OUTPUT=$prefix.sorted.uniq.bam METRICS_FILE=$prefix.metrics.txt REMOVE_DUPLICATES=true ASSUME_SORTED=true SKIP_PAIRS_WITH_NO_MATE_CIGAR=true
+# removes PCR duplicates
+samtools index $prefix.sorted.uniq.bam
+
+
+### Count reads per chromosome
+echo "Counting reads per chromosome..."
+samtools view $prefix.sorted.uniq.bam | cut -f 3 | sort | uniq -c | sed -e 's/^[ \t]*//' > $prefix.chromMap.txt
+
+
+### Write the mapping statistics file
+echo "Mapping stats..."
+TOTAL_RD=$(expr $(cut -f 1 -d' ' *.R1.fastq | wc -l) / 4) # total reads
+FILTERED_RD=$(expr $(cut -f 1 -d' ' *filtered_R1.fastq | wc -l) / 4) # after filtering
+TRIMMED_RD=$(expr $(cut -f 1 -d' ' *trim2_R1.fastq | wc -l) / 4) # after trimming
+UNMAPPED_RD=$(samtools view -S -f 4 *btout2.sam | cut -f 1 | uniq | wc -l) # no good alignments after mapping
+MAPPED_RD=$(samtools view -S -F 4 *btout2.sam | cut -f 1 | uniq | wc -l) # a good alignment was found, only count one alignment per read
+TOTAL_ALIGNS=$(samtools view -S -F 4 *btout2.sam | cut -f 1 | wc -l) # total number of alignments, including reads with multiple good alignments
+UNIQ_ALIGNS=$(samtools view -S *mapped_1alignmentonly.sam | cut -f 1 | wc -l) # reads with only a single good alignment
+UNIQ_ALIGNS_ONE_COPY=$(samtools view -S *mapped_1alignmentonly.sam | cut -f 10 | sort | uniq | wc -l) # number of reads with single alignment and their duplicate reads removed
+printf "%-10s\t%-10s\t%-10s\t%-10s\t%-10s\t%-10s\t%-10s\t%-10s\n" TOTAL_RD	FILTERED_RD	TRIMMED_RD	UNMAPPED_RD	MAPPED_RD	TOTAL_ALIGNS	UNIQ_ALIGNS	UNIQ_ALIGNS_ONE_COPY > $prefix.map_stats.txt
+printf "%-10s\t%-10s\t%-10s\t%-10s\t%-10s\t%-10s\t%-10s\t%-10s\n" $TOTAL_RD $FILTERED_RD $TRIMMED_RD $UNMAPPED_RD $MAPPED_RD $TOTAL_ALIGNS $UNIQ_ALIGNS $UNIQ_ALIGNS_ONE_COPY >> $prefix.map_stats.txt
+
+
+### gzip output files
+echo "Gzipping output files..."
+gzip *.sam
+gzip *.fastq
+gzip *.bam
+
+
+### TO DO: Create a QC report
+# echo "QC report..."
+# cp /groups/cbdm_lab/dp133/scripts/ATAC/atac* .
+# Rscript atac_knit.R -w . -r $prefix.rmd -o $prefix.html
+```
+<br>
+   
+
+#### Table of reads passing filters 
+
+```{r mapstats_table, eval=TRUE, results="asis"}
+library(xtable)
+options(xtable.floating = F)
+library(dplyr)
+
+# make table for Batch 1
+data.path <- "../Batch1/PE/"
+datafiles <- list.files(path=data.path, pattern="*_stats.txt")
+df1 <- do.call('rbind',
+              lapply(datafiles,
+                     function(x) read.table(paste(data.path,x,sep=""),header=T)))
+sample.names <- unlist(strsplit(datafiles, split = ".map_stats.txt"))
+df1 <- cbind(sample.names,df1)
+df1$Batch <- rep("1",length(datafiles))
+
+# make table for Batch 2 
+data.path <- "../Batch2/PE/"
+datafiles <- list.files(path=data.path, pattern="*_stats.txt")
+df2 <- do.call('rbind',
+              lapply(datafiles,
+                     function(x) read.table(paste(data.path,x,sep=""),header=T)))
+sample.names <- unlist(strsplit(datafiles, split = ".map_stats.txt"))
+df2 <- cbind(sample.names,df2)
+df2$Batch <- rep("2", length(datafiles))
+
+# make table for colon (combined reps 1+2 fq files, from different batches)
+data.path <- "../Cross-batch/PE/"
+datafiles <- list.files(path=data.path, pattern="*_stats.txt")
+df3 <- do.call('rbind',
+              lapply(datafiles,
+                     function(x) read.table(paste(data.path,x,sep=""),header=T)))
+sample.names <- unlist(strsplit(datafiles, split = ".map_stats.txt"))
+df3 <- cbind(sample.names,df3)
+df3$Batch <- rep("1.2",length(datafiles))
+
+# merge
+df <- rbind(df1,df2,df3)
+
+# remove extraneous columns
+df <- df[-c(5,7)]
+
+# rename columns
+mapnames <- c("Sample","Total Reads","Passed Qual Filter","Post Trimming","Post Mapping","Post Single Mapping",
+              "Post Dup Removal","Batch")
+names(df) <- mapnames
+
+# reorder rows alphabetical
+df <- arrange(df, as.character(df$Sample))
+
+# display as table
+print(xtable(df), type="html",include.rownames=F)
+```
+<br>    
+
+#### Table of reads excluded
+```{r reads_cut, eval=T, results="asis"}
+# add columns with new stats
+df.cut <- df %>% mutate(
+  `Quality filtered` = `Total Reads`- `Passed Qual Filter`,
+  `Adapter trimmed` = `Passed Qual Filter` - `Post Trimming`,
+  `Unmapped` = `Post Trimming` - `Post Mapping`,
+  `Multiple mappings` = `Post Mapping` - `Post Single Mapping`,
+  `Duplicates` = `Post Single Mapping` - `Post Dup Removal`,
+  `Pct Dups of Total` = (`Duplicates` / `Total Reads`) * 100,
+  `Pct Usable of Total` = (`Post Dup Removal` / `Total Reads`) * 100
+)
+# remove extraneous columns
+df.cut <- df.cut[-c(2:7)]
+# display as table
+options(xtable.floating = F)
+
+print(xtable(df.cut),type="html",include.rownames=F,floating=F)
+```
+<br>   
+
+#### Histograms
+```{r hist, eval=T, fig.width=4, fig.height=3}
+# open plot devide
+pdf("hist_usable_dups.pdf", width=4, height=3)
+# draw plots
+hist(df.cut$`Pct Dups of Total`, xlab = "Percent Duplicates of Total Reads", xlim=c(0,100), cex.main=0.6)
+hist(df.cut$`Pct Usable of Total`, xlab = "Percent Usable of Total Reads", xlim=c(0,100), cex.main=0.6)
+# save and close
+dev.off()
+```
+<br>    
+
+#### Boxplot of percent duplicates with individual data points
+```{r boxdot, eval=T, fig.width = 6, fig.height=6}
+library(ggplot2)
+
+# boxplot of percent duplicates
+g <- ggplot(df.cut, aes(x=Batch, y=`Pct Dups of Total`)) 
+g +
+  geom_boxplot(outlier.colour=NA, width=.4) +
+  geom_dotplot(aes(fill=Sample), binaxis="y", binwidth=.5, stackdir="center",dotsize=3) +
+  ylim(0,100) +
+  theme_bw() +
+  theme(legend.text=element_text(size=9))
+ggsave("pct_dups_box.pdf", width=6,height=5.5)
+```
+<br>    
+
+#### Boxplot of percent usable with individual data points
+```{r boxdot2, eval=T, fig.width = 6, fig.height=6}
+library(ggplot2)
+
+# boxplot of percent duplicates
+g <- ggplot(df.cut, aes(x=Batch, y=`Pct Usable of Total`)) 
+g +
+  geom_boxplot(outlier.colour=NA, width=.4) +
+  geom_dotplot(aes(fill=Sample), binaxis="y", binwidth=.5, stackdir="center",dotsize=3) +
+  ylim(0,100) +
+  theme_bw() +
+  theme(legend.text=element_text(size=9))
+ggsave("pct_usable_box.pdf",width=6,height=5.5)
+```
+<br>    
+
+#### Chromosome Map
+```{r chromMap, eval=T}
+library(reshape2)
+
+# function to loop over input files in a folder, create dataframe with sample labels
+chrom_f <- function(datafiles,Batch) {
+  output <- list(1:4) # create output list
+  
+  for(i in 1:length(datafiles)) {
+  
+  chrom <- read.table(file=paste("../Batch1/PE/",  datafiles[i],sep="")) # read in datafiles
+
+  names(chrom) <- c("Reads","Chr") # change column names
+  
+  random <- grep(chrom$Chr,pattern = "*_random") # find "Chr_random" annotations 
+  
+  chrom <- chrom[-c(random),] # remove 
+  
+  chrom$Sample <- as.character(strsplit(datafiles[i], split = ".chromMap.txt")) # add sample name
+  
+  chrom$Batch <- as.character(Batch) # add batch #
+   
+  output[i] <- list(chrom) # store each df in list
+  }
+  return(output)
+}
+
+# run for batch 1
+data.path <- "../Batch1/PE/"
+datafiles <- list.files(path=data.path, pattern="*.chromMap.txt")
+batch1_l <- chrom_f(datafiles,1) # batch1 [l]ist
+batch1_ml <- melt(batch1_l, id.vars=c("Reads", "Chr", "Sample","Batch"))[-5] # batch1 [m]elted [l]ist
+
+# run for batch 2
+data.path <- "../Batch2/PE/"
+datafiles <- list.files(path=data.path, pattern="*.chromMap.txt")
+batch2_l <- chrom_f(datafiles,2) # batch2 [l]ist
+batch2_ml <- melt(batch2_l, id.vars=c("Reads", "Chr", "Sample","Batch"))[-5] # batch2 [m]elted [l]ist)
+
+# run for cross-batch
+data.path <- "../Cross-batch/PE"
+datafiles <- list.files(path=data.path, pattern="*.chromMap.txt")
+cross_l <- chrom_f(datafiles,1.2) # cross-batch [l]ist
+cross_ml <- melt(cross_l, id.vars=c("Reads", "Chr", "Sample","Batch"))[-5] # cross-batch [m]elted [l]ist)
+
+# merge into single df
+chroms <- rbind(batch1_ml, batch2_ml, cross_ml)
+```
+<br>    
+
+#### Plot chromo distribution
+```{r chrom_plot, eval=T, fig.width=12, fig.height=10}
+library(ggplot2)
+
+# set order of chr
+chr_levels <- c("chr1", "chr2", "chr3", "chr4", "chr5", "chr6", "chr7", "chr8", "chr9", "chr10",
+                "chr11", "chr12", "chr13", "chr14", "chr15", "chr16", "chr17", "chr18", "chr19",
+                "chrX", "chrY","chrM")
+
+chroms$Chr <- factor(chroms$Chr, levels=chr_levels)
+
+# function to draw plots
+chrom_plot <- function(df) {
+  g <- ggplot(df, aes(x=Chr,y=Reads,fill=Chr))
+  
+  g + 
+  geom_bar(stat="identity") +
+  facet_grid(Sample ~.) +
+  guides(fill=FALSE) +
+  theme_bw() + 
+  theme(axis.title.x=element_blank()) + 
+  theme(axis.text.x = element_text(angle=30)) 
+}
+
+# plot batch1
+batch1 <- chroms[chroms$Batch==1,]
+chrom_plot(batch1)
+ggsave("chromMap.batch1.pdf", width=8, height=6)
+
+# plot batch2
+batch2 <- chroms[chroms$Batch==2,]
+chrom_plot(batch2)
+ggsave("chromMap.batch2.pdf", width=8, height=7)
+
+# plot batch 1.2
+batch1.2 <- chroms[chroms$Batch==1.2,]
+chrom_plot(batch1.2)
+ggsave("chromMap.batch1-2.pdf", width=8, height=4)
+```
+<br>    
+
+#### Plot percent mitochondrial of uniquely mapped and de-duplicated
+```{r pct_mito, eval=T}
+library(dplyr)
+library(ggplot2)
+
+# calculate total number of uniquley mapped, de-duplicated reads per sample
+df <- chroms %>%
+  group_by(Sample) %>%
+  summarise(Total_mapped =  sum(Reads))
+
+# extract total number of reads mapped to mito
+m <- chroms %>%
+  group_by(Sample) %>%
+  filter(Chr == "chrM")
+
+# re-order columns of df
+m <- m[,c(3,4,2,1)]
+
+# combine columns of mito reads with total reads into single df
+df2 <- cbind(m,df[2])
+
+# calculate %M
+df2$Pct_M <- (df2$Reads / df2$Total_mapped) * 100
+
+# plot, broken up by batch for easier viewing
+g <- ggplot(df2, aes(x=Sample,y=Pct_M, fill=Sample))
+g +
+  geom_bar(stat="identity") +
+  ylim(0,100) + 
+  facet_grid(Batch ~.) + 
+  theme_bw() +
+  theme(axis.title.x=element_blank()) +
+  theme(axis.text.x=element_blank())
+ggsave("Pct_mito.pdf",width=6,height=4)
+```  
+<br>    
+
+
+
+
