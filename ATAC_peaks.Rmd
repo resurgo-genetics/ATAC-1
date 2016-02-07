@@ -136,50 +136,22 @@ gzip *sorted.uniq.bam
 
 
 #### getting sample-by-sample normalized read counts for each peak
++ checked output of one sample on genome browser
++ looks good - calculated rpm values correspond to peak height
 + currently running in orchestra
 + `bsub -q mcore -W 4:00 -n 8 Rscript jd_chipqc_peaks.R`
 + was in PEND for hour so tried
 + `bsub -q priority -W 10:00 -R "rusage[mem=64000]" Rscript jd_chipqc_peaks.R` 
-```{r counts, eval=F}
++ this works, currently running as separate script in Orchestra, code pasted below
+```{r jd_chipqc_peaks.R}
+# load libraries
 library(ChIPQC)
-chr <- paste("chr",1:19,sep="")
-chr <- c(chr,"chrX","chrY")
-mus <- ChIPQCsample("Mus_Treg_rep1.sorted.uniq.bam",peaks="Mus_Treg_rep1.peaks.atac.bed.txt",annotation = "mm9", chromosomes=chr)
 
-# look at sample object
-mus
-
-# get total reads
-QCmetrics(mus)[1]
-
-# extract peak table with counts 
-peaks_mus <- peaks(mus)
-
-# convert to dataframe
-peaks_df <- as.data.frame(peaks_mus)
-
-# write out
-write.csv(df, "mus_rep1_chipqc_peaks.csv", row.names=F)
-
-# checking on genome browser
-# looks good - calculated rpm values correspond to peak height
-
-
-#### FUNCTION IN PROGRESS
-
-# get names of peak files
-peaks <- list.files(".", pattern = "*.bed.txt")
-
-# get names of bam files
-reads <- list.files(".", pattern = "*.uniq.bam$")
-
-# strsplit(peaks[1], split=".peaks.atac.bed.txt")
-
-# function to generate chipqc object and peak table with read counts in rm
+# function to generate chipqc object and peak table with read counts in rpm 
 # exports ChIPQCsample object and peak table
 # ARGS: 
 
-peak_rpm <- function(peaks,reads) {
+peak_rpm <- function(reads, peaks) {
   # create chromosome vector
   chr <- paste("chr",1:19,sep="")
   chr <- c(chr, "chrX","chrY")
@@ -215,22 +187,39 @@ peak_rpm <- function(peaks,reads) {
   # write ChIPQCsample
   save(qcs, file=paste(Sample,".RDa",sep=""))
 }
+
+#### Function implementation ####
+# set working directory
+setwd("/groups/cbdm-db/jrd26/ATAC_crossbatch/R/temp/")
+
+# get names of peak files
+peaks <- list.files(".", pattern = "*.bed.txt")
+
+# get names of bam files
+reads <- list.files(".", pattern = "*.uniq.bam$")
+
+# loop over each peak/bam pair in folder
+for(i in 1:length(reads)) {
+  peak_rpm(reads[i], peaks[i])
+}
 ```
 <br>    
 
-
 #### Import peak files into peak list
-
 ```{r peak_list, eval=T}
-# read peak table .csv files into a list
-filenames <- list.files(path = ".", pattern = ".csv")
+# create path to .csv files  
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Master_peaks/R/temp/"
 
-# create the list of dataframes
+# get filenames
+filenames1 <- list.files(path = path, pattern = ".csv")
+filenames <- paste(path, filenames, sep="") # update filenames with path
+
+# combine peak table .csv dfs into a list
 colClasses_peaks <- c("factor","character", "factor", rep("numeric",2), "factor", rep("numeric",2)) # set column classes
-pl <- lapply(filenames, read.csv, colClasses = colClasses_peaks) # [p]eak [l]ist
+pl <- lapply(filenames, read.csv, colClasses = colClass) # [p]eak [l]ist
 
 # name the list elements to match the files
-names(pl) <- gsub("\\.csv", "", filenames)
+names(pl) <- gsub("\\.csv", "", filenames1)
 ```
 <br>    
 
@@ -241,7 +230,7 @@ names(pl) <- gsub("\\.csv", "", filenames)
 ```{r threshold_table, eval=T, results="asis"}
 library(xtable)
 
-# compute the number of peaks >=n rpm in each sample
+# function to compute the number of peaks >=n rpm in each sample
 # ARGS: df = dataframe of peak height rpms, peak_height_var = string of var name storing rpm values, cutoffs = numeric vector of rpm cutoffs 
 # USAGE: number_peaks_above_nrpm(df, "peak_height_var", cutoffs)
 number_peaks_above_nrpm <- function(df, rpm_var, cutoffs) { 
@@ -271,7 +260,7 @@ ppf <- as.data.frame(peaks_pass_filter) #[p]eaks [p]ass [f]ilter
 ppf <- cbind(ppf,"rpm_cutoff" = cutoffs) # add column for each cutoff
 
 # write to file
-write.csv(ppf, "peaks_totals_rpm_filtered.csv")
+write.csv(ppf, "peak_totals_rpm_filtered.csv")
 
 # generate xtable
 print(xtable(ppf), type="html", include.rownames=F)
@@ -279,7 +268,7 @@ print(xtable(ppf), type="html", include.rownames=F)
 <br>    
 
 
-#### Plot distribution of read counts
+#### Plot distribution of read counts for each sample
 + goal = boxplots
 + goal = histograms, bin size and limits will be key for clear data
 ```{r plots, eval=T}
@@ -296,6 +285,12 @@ plm$L1 <- NULL # remove extraneous column
 
 
 ```
+<br>    
+
+
+#### Generate ChIPQC summary table 
++ TO DO:
+
 
 
 
