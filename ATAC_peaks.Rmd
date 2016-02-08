@@ -8,10 +8,6 @@ output: html_document
 last modified: `r Sys.Date()`
 <br>    
 
-#### TO DO
-+ If chipqc script works, want to be able to have peaks and reads folders read in from command line
-<br>    
-
 #### R Markdown Specifications
 Set global options
 ```{r setoptions, echo=F}
@@ -138,9 +134,8 @@ gzip *sorted.uniq.bam
 #### getting sample-by-sample normalized read counts for each peak
 + checked output of one sample on genome browser
 + looks good - calculated rpm values correspond to peak height
-+ currently running in orchestra
 + `bsub -q mcore -W 4:00 -n 8 Rscript jd_chipqc_peaks.R`
-+ was in PEND for hour so tried
++ was in PEND for hour so tried:
 + `bsub -q priority -W 10:00 -R "rusage[mem=64000]" Rscript jd_chipqc_peaks.R` 
 + this works, currently running as separate script in Orchestra, code pasted below
 ```{r jd_chipqc_peaks.R}
@@ -208,14 +203,14 @@ for(i in 1:length(reads)) {
 #### Import peak files into peak list
 ```{r peak_list, eval=T}
 # create path to .csv files  
-path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Master_peaks/R/temp/"
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Master_peaks/R/temp/Batch1/"
 
 # get filenames
 filenames1 <- list.files(path = path, pattern = ".csv")
-filenames <- paste(path, filenames, sep="") # update filenames with path
+filenames <- paste(path, filenames1, sep="") # update filenames with path
 
 # combine peak table .csv dfs into a list
-colClasses_peaks <- c("factor","character", "factor", rep("numeric",2), "factor", rep("numeric",2)) # set column classes
+colClass <- c(rep("factor",2), rep("numeric",3), "character", rep("numeric",4)) # set column classes
 pl <- lapply(filenames, read.csv, colClasses = colClass) # [p]eak [l]ist
 
 # name the list elements to match the files
@@ -260,7 +255,7 @@ ppf <- as.data.frame(peaks_pass_filter) #[p]eaks [p]ass [f]ilter
 ppf <- cbind(ppf,"rpm_cutoff" = cutoffs) # add column for each cutoff
 
 # write to file
-write.csv(ppf, "peak_totals_rpm_filtered.csv")
+write.csv(ppf, "peak_totals_rpm_filtered.csv", row.names=F)
 
 # generate xtable
 print(xtable(ppf), type="html", include.rownames=F)
@@ -271,6 +266,8 @@ print(xtable(ppf), type="html", include.rownames=F)
 #### Plot distribution of read counts for each sample
 + goal = boxplots
 + goal = histograms, bin size and limits will be key for clear data
++ for batch1: *Removed 4 rows containing non-finite values (stat_boxplot)*, need to add pseudo before log?
++ TO DO? = create large list --> df all samples, facet by batch?
 ```{r plots, eval=T}
 library(reshape2)
 library(ggplot2)
@@ -281,15 +278,69 @@ plm <- melt(pl, id.vars=names(pl[[1]])) # [p]eak [l]ist [m]elted
 plm$L1 <- NULL # remove extraneous column
 
 # calculcate log2 rpm values and append as new column
+plm$log2_rpm <- log(plm$rpm, 2)
+
+# show number of peaks where rpm =0 
+rpm0pks <- plm$log2_rpm == "-Inf"
+plm_rpm0pks <- plm[rpm0pks,]
+
+print("Peaks where rpm =0 ...") 
+xtable(plm_rpm0pks)
+
+# filter out peaks where rpm = 0
+plmf <- plm[!rpm0pks,]  #plm[f]iltered
+
+# draw boxplot of all peaks in each sample
+g <- ggplot(data = plmf, aes(x=Sample, y=log2_rpm, fill=Sample))
+g + geom_boxplot(varwidth =T) +
+  theme_bw() + 
+  ylim(-2,10) +
+  theme(axis.title.x = element_blank())
+ggsave("../../Master_peaks/plots/box_allpeaks_batch1.pdf", width=5, height=4)
+
+# draw boxplot of peaks passing n rpm
+# define function to filter peaks and draw plot
+bp_nrpm <- function(df, n) {
+  df %>%
+    filter(rpm >= n) %>% # filter by rpm cutoff 
+    ggplot(aes(x=Sample, y=log2_rpm, fill=Sample)) + # plot
+    geom_boxplot(varwidth=T) +
+    ylim(-2,10) +
+    theme_bw() + 
+    theme(axis.title.x = element_blank())
+}
+ggsave("../../Master_peaks/plots/box_3rpm_batch1.pdf", width=5, height=4)
 
 
+# draw histograms of all peaks in each sample
+g <- ggplot(data = plmf, aes(x=log2_rpm))
+g + geom_histogram(fill="white",color="black",binwidth=0.1) +
+  facet_grid(Sample~.) +
+  geom_vline(xintercept =log(1,2)) +
+  geom_vline(xintercept = log(2,2)) +
+  geom_vline(xintercept = log(3,2)) +
+  theme_bw()
+ggsave("../../Master_peaks/plots/hist_allpeaks_batch1.pdf", width=5, height=6.5)
 
 ```
 <br>    
 
 
+#### Plot distribution of peaks across chromsomes
++ goal = bar plot, turned on side, facet on sample
+
+
+
+#### Plot distribution of read counts across each chromsome?
++ goal = boxplots
++ goal = histograms, bin size and limits will be key for clear data
+
 #### Generate ChIPQC summary table 
-+ TO DO:
++ Pseudo:
++ make a df in R by pasting each required var
++ var length = length filenames (for peak.csv)
++ but also need bam files in same folder
+
 
 
 
