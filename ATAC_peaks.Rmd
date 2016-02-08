@@ -266,7 +266,6 @@ print(xtable(ppf), type="html", include.rownames=F)
 #### Plot distribution of read counts for each sample
 + goal = boxplots
 + goal = histograms, bin size and limits will be key for clear data
-+ for batch1: *Removed 4 rows containing non-finite values (stat_boxplot)*, need to add pseudo before log?
 + TO DO? = create large list --> df all samples, facet by batch?
 ```{r plots, eval=T}
 library(reshape2)
