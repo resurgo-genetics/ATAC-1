@@ -30,6 +30,8 @@ https://github.com/jdis24/ATAC.git
 
 + [these steps done in this document]
 + plot distributions of read counts 
++ filter for strong peaks (start with >=3 rpm)
++ get genomic annotations of strong peaks 
 + use DiffBind to find differential peaks between VAT Treg and Tconv
 + use merged peaks as input to DiffBind, with .bam files for each replicate
 + export all peaks in the contrast with p-values and/or FDR
@@ -54,6 +56,17 @@ pl <- lapply(filenames, read.csv, colClasses = colClass) # [p]eak [l]ist
 
 # name the list elements to match the files
 names(pl) <- gsub("\\.csv", "", filenames1)
+
+# convert each df to bed format
+pl_bed <- lapply(pl, function(x) {
+  x <- x[,c("seqnames","start","end")]
+})
+
+# export each df as tdt bed file
+lapply(names(pl_bed),
+       function(x) write.table(pl_bed[x], file=paste(paste0(path,x),"bed",sep="."), sep = "\t", 
+                              quote=F, row.names=F,col.names=c("chr","start","end")))
+
 ```
 <br>    
 
@@ -92,7 +105,7 @@ ppf <- as.data.frame(peaks_pass_filter) #[p]eaks [p]ass [f]ilter
 ppf <- cbind(ppf,"rpm_cutoff" = cutoffs) # add column for each cutoff
 
 # write to file
-write.csv(ppf, "peak_totals_rpm_filtered.csv", row.names=F)
+write.csv(ppf, file = paste0(path,"peak_totals_rpm_filtered.csv"), row.names=F)
 
 # generate xtable
 print(xtable(ppf), type="html", include.rownames=F)
@@ -147,7 +160,7 @@ bp_nrpm <- function(df, n) {
 
 n <- 3 # set rpm cutoff
 bp_nrpm(plmf, n) # draw plot
-ggsave(paste0(path,"a4-boxplot-",n,"-rpm-filtered.pdf"), width =5, height =4) # export pdf
+ggsave(paste0(path,"a4-boxplot-",n,"rpm-filtered.pdf"), width =5, height =4) # export pdf
 # ggsave(paste0(path, "a4-boxplot-rpm-filtered.pdf"), width=5, height=4)
 
 
@@ -159,8 +172,106 @@ g + geom_histogram(fill="white",color="black",binwidth=0.1) +
   geom_vline(xintercept = log(2,2)) +
   geom_vline(xintercept = log(3,2)) +
   theme_bw()
-ggsave(paste0(path, "a4-count-hist.pdf"), width=5, height=6.5)
+ggsave(paste0(path, "a4-count-hist.pdf"), width=5, height=9)
 ```
+<br>    
+
+
+#### Filter for strong peaks
+```{r filter_peaks, eval=T}
+library(dplyr)
+# select peaks >= 3 rpm
+pl3 <- lapply(pl, filter, rpm >=3)
+
+# export each df as .csv file
+lapply(names(pl3),
+       function(x) write.csv(pl3[[x]], file=paste(paste0(path,x),"3rpm","csv",sep="."), row.names=F))
+
+# convert each df to bed format
+pl3bed <- lapply(pl3, function(x) {
+  x <- x[,c("seqnames","start","end")]
+})
+
+# export each df as tdt bed file
+lapply(names(pl3bed),
+       function(x) write.table(pl3bed[x], file=paste(paste0(path,x),"3rpm","bed",sep="."), sep = "\t", 
+                              quote=F, row.names=F,col.names=c("#chr","start","end")))
+```
+<br>    
+
+
+#### Get genomic annotations of all peaks and strong peaks
++ are they biased for TSS?
++ HOMER annotatePeaks.pl
++ will write a script to loop over many bed files
++ for now ran each one-by-one
+```{r annotate_pks, engine="bash"}
+annotatePeaks.pl Spl_wVAT_Treg_rep1.3rpm.bed mm9 -annStats Spl_wVAT_Treg_rep1.3rpm.annStats.txt > Spl_wVAT_Treg_rep1.3rpm.annpks.txt
+
+annotatePeaks.pl Spl_wVAT_Treg_rep1.bed mm9 -annStats Spl_wVAT_Treg_rep1.annStats.txt > Spl_wVAT_Treg_rep1.annpks.txt
+```
+<br> 
+
+
+#### Plot distributions of genomic annotations before and after filtering
++ quick look in Excel
++ need to write code for ggplot
+```{r annotate_dist, eval =T}
+```
+<br>    
+
+
+#### Run pair-wise analyses for peaks with differential counts
++ DiffBind
+```{r DiffBind}
+library(DiffBind)
+
+# create sample sheet
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A4-vat-tconv-treg/"
+
+Peaks <- list.files(paste0(path, "peaks/"))
+
+# create columns for sample sheet
+SampleID <- unlist(strsplit(Peaks, split = ".3rpm.bed"))
+Tissue <- c(rep("Spleen",2),rep("VAT",4))   
+Factor <- unlist(strsplit(SampleID, split = "_rep1"))
+Factor <- unlist(strsplit(Factor, split = "_rep2"))
+Condition <- "Treg"
+#Treatment <- c("Batch1","Batch1","Batch2","Batch2","Batch1","Batch1")
+Treatment <- c(rep("10wo",6))
+Replicate <- c("1","2","1","2","1","2")
+PeakCaller <- "homer"
+PeakFormat <- "bed"
+PeakPath <- list.files(paste0(path, "peaks/"), full.names = T)
+bamPath <- list.files(paste0(path,"reads/"), full.names=T)
+
+samples <- cbind(SampleID = SampleID, 
+                 Tissue = Tissue, 
+                 Factor = Factor, 
+                 Condition = Condition,
+                 Treatment = Treatment,
+                 Replicate = Replicate,
+                 bamReads = bamPath,
+                 Peaks = PeakPath,
+                 PeakCaller = PeakCaller,
+                 PeakFormat = PeakFormat)
+write.csv(samples, "samples.csv", row.names=F)
+#Replicate <- sapply(SampleID, grep, "$")
+
+
+# create DBA object
+vat <- dba(sampleSheet = "samples.csv", bRemoveRandom = T, minOverlap = 2)
+
+# make consensus peakset from replicates
+vat <- dba.peakset(vat, consensus = -DBA_REPLICATE)
+vat2 <- dba.peakset(vat, consensus = c(DBA_FACTOR, DBA_CONDITION))
+vat2
+
+
+# make consensus peakset from samples
+
+```
+
 
 
 
