@@ -258,18 +258,57 @@ samples <- cbind(SampleID = SampleID,
 write.csv(samples, "samples.csv", row.names=F)
 #Replicate <- sapply(SampleID, grep, "$")
 
-
+##-----loading data-----------------------------------------------------------------------------------
 # create DBA object
 vat <- dba(sampleSheet = "samples.csv", bRemoveRandom = T, minOverlap = 2)
 
 # make consensus peakset from replicates
 vat <- dba.peakset(vat, consensus = -DBA_REPLICATE)
-vat2 <- dba.peakset(vat, consensus = c(DBA_FACTOR, DBA_CONDITION))
-vat2
+
+# make consensus peakset from samples and count reads
+vat <- dba.count(vat, peaks = vat$masks$Consensus, score = DBA_SCORE_RPKM)
+
+# save dba to file
+dba.save(vat, file="vat", dir=path, pre="dba_", ext="RData", bMinimize=F)
+
+# export consensus peakset with read counts
+vat_con <- dba.peakset(vat, vat$masks$Consensus, bRetrieve = T, 
+                       writeFile=paste0(path,"a4-consensus.rpkm.txt"), DataType=DBA_DATA_FRAME)
+write.csv(vat_con, file=paste0(path, "a4-consensus.rpkm.csv"), row.names=F)
+
+# save read count correlation heatmap
+pdf(paste0(path,"a4.vat.reads.heat.pdf"), width=10, height=10, pagecentre = T)
+par(oma = c(3,2,2,3))
+dba.plotHeatmap(vat)
+dev.off()
+
+##-------------contrasts-----------------------------------------------------------------------------------
+# establish contrast using factor (==Cell Type) metadata
+contrast <- dba.contrast(vat, categories = DBA_FACTOR, minMembers=2)
+
+# perform differential analysis
+a1 <- dba.analyze(contrast) # [a]nalysis1
+
+# return results of all contrasts
+cr <- data.frame(dba.show(a1, bContrasts = T)) # [c]ontrast [r]esults
+write.table(cr, file=paste0(path,"a4-contrasts.txt"), sep="\t", row.names=F)
+
+# get peaks from specific contrasts
+con4 <- dba.report(a1, contrast = 4, th=1, bUsePval = F, bNormalized =T, bCounts =T, initString = path, file="a4-con4.allpks")
+
+# export plots from specific contrasts 
+dba.plotMA(a1, contrast = 4, fold=0, bXY=T, th=0.01) # XY plot
+dev.print(pdf, file=paste0(path,"a4-con4-xy.pdf")) 
+
+dba.plotMA(a1, contrast = 4, fold=0, bXY=F, th=0.01) # MA plot
+dev.print(pdf, file=paste0(path,"a4-con4-ma.pdf")) 
+
+dba.plotHeatmap(a1, report=dba.report(a1, contrast=4, th = 0.01, bUsePval=F, fold=2), correlations =F,
+                maxSites = 8000, bLog=T, score=DBA_SCORE_RPKM)
+dev.print(pdf, file=paste0(path,"a4-con4-fdr01-fc2.pdf")) 
 
 
-# make consensus peakset from samples
-
+dev.off()
 ```
 
 
