@@ -307,10 +307,157 @@ dba.plotHeatmap(a1, report=dba.report(a1, contrast=4, th = 0.01, bUsePval=F, fol
                 maxSites = 8000, bLog=T, score=DBA_SCORE_RPKM)
 dev.print(pdf, file=paste0(path,"a4-con4-fdr01-fc2.pdf")) 
 
-
-dev.off()
 ```
+<br>    
 
+
+#### Plot p-value vs fold-change
+```{r plot_pval}
+# read in datafile
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A4-vat-tconv-treg/"
+con4 <- read.csv(paste0(path,"_a4-con4.allpks.csv"), header = T)
+
+# calculate number of peaks with FC >=2
+Tconv.spec <- sum(con4$Fold >=2)
+Treg.spec <- sum(con4$Fold <= -2)
+
+# plot pval vs Fold-change
+library(ggplot2)
+g <- ggplot(data = con4, aes(x=Fold, y=log(p.value,10), color=FDR))
+g + geom_point(size = 0.5) + 
+  theme_bw() + 
+  xlim(-10,10) + 
+  xlab("Tconv / Treg") + 
+  ylab("log10 P-value") + 
+  annotate("text", x =7, y=-1, label=Tconv.spec, size =7, color = "red") +
+  annotate("text", x=-7, y=-1, label=Treg.spec, size=7, color="red")
+ggsave(filename=paste0(path,"a4-pval_vs_fold.pdf"), width=5,height=4)
+```
+<br>    
+
+#### Export similar and differential peaks
+```{r subset_pks}
+Tconv.spec <- con4[con4$Fold >=2,]
+Treg.spec <- con4[con4$Fold <= -2,]
+Common <- con4[con4$Fold >-2 & con4$Fold <2,]
+
+# add unique peak ids
+n <- as.numeric(nrow(Tconv.spec))
+prefix <- "Tconv_spec_pk_"
+Tconv.spec$Name <- paste(prefix,seq(1:n), sep="")
+
+n <- as.numeric(nrow(Treg.spec))
+prefix <- "Treg_spec_pk_"
+Treg.spec$Name <- paste(prefix,seq(1:n), sep="")
+
+n <- as.numeric(nrow(Common))
+prefix <- "Common_pk_"
+Common$Name <- paste(prefix,seq(1:n), sep="")
+
+# combine Treg and Tconv specific into all differential 
+Alldiff <- rbind(Tconv.spec, Treg.spec)
+
+# combine into list
+dl <- list(Tconv_spec = Tconv.spec, Treg_spec = Treg.spec, Common = Common, All_diff = Alldiff) #[d]ifferential [l]ist
+
+# convert each df to bed format
+dl_bed <- lapply(dl, function(x) {
+  x <- x[,c("Chr","Start","End","Name")]
+})
+ 
+# export bed files
+lapply(names(dl_bed),
+       function(x) write.table(dl_bed[x], file=paste(paste0(path,"a4-", x),"bed", sep="."), sep="\t",
+                               quote=F, row.names=F, col.names=c("#chr","start","end","name")))
+```
+<br>    
+
+#### Mapping peaks to genes with GREAT
++ Background = Whole genome background
++ Assembly = Mouse: NCBI build 37 (UCSC mm9, Jul 2007) 
++ Associate genomic regions = 
++ Basal+extension (constitutive 5.0 kb upstream and 1.0 kb downstream, up to 100.0 kb max extension). Curated regulatory domains are included.
++ overlap gene list for differential peaks with gene list for common peaks
++ did gene overlaps in R then used Excel vlookup to get peaks IDs for each gene
+```{r great_genes}
+# find overlaps between gene lists
+adg <- read.table(file=paste0(path,"a4-Alldiff-great-geneID.txt")) # [a]ll [d]iff [g]enes
+adg <- as.character(adg$V1)
+
+acg <- read.table(file=paste0(path,"a4-Common-great-geneID.txt")) # [all] [c]ommon [genes]
+acg <- as.character(acg$V1)
+
+trsg <- read.table(file=paste0(path,"a4-Treg-spec-great-geneID.txt")) #[tr]eg-[s]pecific [g]enes
+trsg <- as.character(trsg$V1)
+
+tcsg <- read.table(file=paste0(path, "a4-Tconv-spec-great-geneID.txt"))
+tcsg <- as.character(tcsg$V1)
+
+overlap1 <- adg %in% acg # find differential that are also in common
+overlap2 <- acg %in% adg # find common that are also in differential
+overlap3 <- trsg %in% acg # find t-reg-specific that are also in common
+overlap4 <- tcsg %in% acg # find t-conv-specific that are also in common
+
+common_only <- acg[!overlap2] # check this again
+diff_only <- adg[!overlap1]
+comm_and_diff <- adg[overlap1]
+
+trsg_with_common_pks <- trsg[overlap3] # [tr]eg[s]pecific[g]enes with common peaks
+trsg_no_common_pks <- trsg[!overlap3] # [tr]eg[s]pecific[g]enes no common peaks
+
+tcsg_with_common_pks <- tcsg[overlap4]
+tcsg_no_common_pks <- tcsg[!overlap4]
+
+write.table(trsg_with_common_pks, file=paste0(path, "a4-trsg_with_common_pks.txt"), sep = "\t",
+            quote=F, row.names=F, col.names="GeneID")
+
+write.table(trsg_no_common_pks, file=paste0(path, "a4-trsg_no_common_pks.txt"), sep = "\t",
+            quote=F, row.names=F, col.names="GeneID")
+
+# retrieve chromosomal coordinates for specific peaks that have common peak in same gene
+peakID_trsg_with_common <- read.csv(file=paste0(path,"a4-trsg_with_common_pk.csv"), stringsAsFactors = F)
+peakID_trsg_with_common <- peakID_trsg_with_common[-1]
+
+non_zero <- lapply(peakID_trsg_with_common, function(x) x[x != "0"])
+non_zero <- unlist(non_zero)
+non_zero <- unique(non_zero)
+
+overlap <- Treg.spec$Name %in% non_zero
+  
+Treg.spec.with.common <- Treg.spec[overlap,]
+
+# retrieve chromosomal coordinates for specific peaks that do not have common peak in same gene
+peakID_trsg_no_common <- read.csv(file=paste0(path,"a4-trsg_no_common_pk.csv"), stringsAsFactors = F)
+peakID_trsg_no_common <- peakID_trsg_no_common[-1]
+
+non_zero <- lapply(peakID_trsg_no_common, function(x) x[x != "0"])
+non_zero <- unlist(non_zero)
+non_zero <- unique(non_zero)
+
+overlap <- Treg.spec$Name %in% non_zero
+
+Treg.spec.no.common <- Treg.spec[overlap,]
+
+# write both to bed files
+# combine into list
+pk_list <- list(Treg.spec.with.common = Treg.spec.with.common, Treg.spec.no.common = Treg.spec.no.common)
+# convert each to bed
+pk_list_bed <- lapply(pk_list, function(x) {
+  x <- x[,c("Chr","Start","End","Name")]
+})
+# export bed files
+lapply(names(pk_list_bed),
+       function(x) write.table(pk_list_bed[x], file=paste(paste0(path,"a4-", x),"bed", sep="."), sep="\t",
+                               quote=F, row.names=F, col.names=c("#chr","start","end","name")))
+``` 
+
+````
+<br>    
+
+
+
+
+#### Clustering
 
 
 
