@@ -450,9 +450,21 @@ lapply(names(pk_list_bed),
        function(x) write.table(pk_list_bed[x], file=paste(paste0(path,"a4-", x),"bed", sep="."), sep="\t",
                                quote=F, row.names=F, col.names=c("#chr","start","end","name")))
 ``` 
+<br>
 
-````
-<br>    
+
+
+#### Motif-finding
++ use HOMER findMotifsGenome.pl
++ search all specific peaks, using whole genome Bg
++ repeat using splenic Bg "Spl_wVat_Treg_consensus_peaks.bed.txt"
++ search all common peaks same way
++ Params:
++ repeat-masked genome
++ size - given
+`findMotifsGenome.pl a4-Treg_spec.bed mm9 a4-Treg-spec-motifsGiven/ -size given -mask -preparsedDir new/`
+`findMotifsGenome.pl a4-Treg_spec.bed mm9 a4-Treg-spec-motifsGiven-splBg/ -size given -mask -bg Spl_wVat_Treg_consensus_peaks.bed.txt -preparsedDir new2/`
+
 
 
 
