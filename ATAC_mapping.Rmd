@@ -6,6 +6,12 @@ output: html_document
 last modified: `r Sys.Date()`   
 <br>
 
+#### README
++ this document contains code and explanation for the initial processing and mapping of all ATAC-seq libraries I've created to date
++ unless otherwise stated in an "AnalysisN.Rmd" doc, files used for all downstream analyses were generated using this pipeline
+<br>    
+
+
 #### TO DO
 + figure out why unique read # is higher than total reads for PE map_stats files
 + add metadata: cell number (create separate table and store as .tdt in folder ?)

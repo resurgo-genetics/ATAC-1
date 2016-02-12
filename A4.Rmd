@@ -8,6 +8,12 @@ output: html_document
 last modified: `r Sys.Date()`
 <br>    
 
+#### README
++ this document contains code and explanation for an analysis comparing VAT Tconv, VAT Treg and splenic Tregs
++ for details on how the input files used in this analysis were generated, see *ATAC_mapping.Rmd* and *ATAC_peaks.Rmd*
+<br>    
+
+
 #### R Markdown Specifications
 Set global options
 ```{r setoptions, echo=F}

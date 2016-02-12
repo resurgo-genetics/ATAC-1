@@ -6,7 +6,12 @@ output: html_document
 ---
 
 last modified: `r Sys.Date()`
-<br>    
+<br>   
+
+#### README
++ this document contains code and explanation for the peak calling and creation of genome browser visualization files for all ATAC-seq libraries I've created to date
++ unless otherwise stated in an "AnalysisN.Rmd" doc, files used for all downstream analyses were generated using this pipeline
+<br>   
 
 #### R Markdown Specifications
 Set global options
