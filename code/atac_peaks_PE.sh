@@ -65,7 +65,7 @@ echo "Finding peaks in dnase mode..."
 findPeaks $prefix.homer.tagdir/ -style dnase -norm 1000000 -o $prefix.peaks.dnase.txt &> $prefix.stdout.peaks.dnase.txt
 
 echo "Merging results of dnase and factor modes..."
-mergePeaks $prefix.peaks.dnase.txt $prefix.peaks.factor.txt -o $prefix.peaks.atac.txt &> $prefix.stdout.merge.txt
+mergePeaks $prefix.peaks.dnase.txt $prefix.peaks.factor.txt > $prefix.peaks.atac.txt
  
 
 #### Compress files
