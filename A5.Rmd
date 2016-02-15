@@ -225,6 +225,8 @@ annotatePeaks.pl <filenmame>.bed mm9 -annStats <filenmame>.annStats.txt > <filen
 ```
 <br> 
 
+#### Run pair-wise analyses for peaks with differential counts
++ DiffBind
 
 
 
