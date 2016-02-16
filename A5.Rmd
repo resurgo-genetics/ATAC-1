@@ -237,11 +237,14 @@ annotatePeaks.pl <filenmame>.bed mm9 -annStats <filenmame>.annStats.txt > <filen
 + DiffBind 
 + Used R 3.2.1 on Orchestra so didn't have to keep .bam locally
 + script called `a5.db.counts.R`
++ run with:
+`module load stats/R/3.2.1`
+`bsub -q priority -W 5:00 -R "rusage[mem=64000]" Rscript a5.db.counts.R`
 ```{r merge_and_count}
 library(DiffBind)
 
 # create sample sheet
-path <- "/groups/cbdm-db/jrd26/ATAC_crossbatch/R/Analysis5"
+path <- "/groups/cbdm-db/jrd26/ATAC_crossbatch/R/Analysis5/"
 
 Peaks <- list.files(paste0(path, "bed/rpm-filtered/"))
 
@@ -285,7 +288,7 @@ ttreg <- dba.peakset(ttreg, consensus = -DBA_REPLICATE)
 ttreg <- dba.count(ttreg, peaks = ttreg$masks$Consensus, score = DBA_SCORE_RPKM)
 
 # save dba to file
-dba.save(ttre, file="ttreg", dir=path, pre="dba_", ext="RData", bMinimize=F)
+dba.save(ttreg, file="ttreg", dir=path, pre="dba_", ext="RData", bMinimize=F)
 
 # export consensus peakset with read counts
 ttreg_con <- dba.peakset(ttreg, ttreg$masks$Consensus, bRetrieve = T, 
