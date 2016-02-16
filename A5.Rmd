@@ -120,6 +120,13 @@ write.csv(ppf, file = paste0(path,"peak_totals_rpm_filtered.csv"), row.names=F)
 
 # generate xtable
 print(xtable(ppf), type="html", include.rownames=F)
+
+# plot distributions of total peaks called at each cutoff
+ppfm <- melt(ppf, id.vars='rpm_cutoff',variable.name='no_peaks') # ppf[m]elted 
+g <- ggplot(ppfm, aes(x=as.factor(rpm_cutoff),y=value))
+g + geom_boxplot() +
+  theme_bw()
+ggsave(paste0(path, "a5-peakcut-boxplot.pdf"), width=7, height=5) # export pdf
 ```
 <br>    
 
@@ -155,7 +162,7 @@ g + geom_boxplot(varwidth =T) +
   theme_bw() + 
   ylim(-2,10) +
   theme(axis.title.x = element_blank())
-ggsave(paste0(path, "a5-boxplot.pdf"), width=5, height=4) # export pdf
+ggsave(paste0(path, "a5-boxplot.pdf"), width=7, height=5) # export pdf
 
 # draw boxplot of peaks passing n rpm
 # define function to filter peaks and draw plot
@@ -171,7 +178,7 @@ bp_nrpm <- function(df, n) {
 
 n <- 2.5 # set rpm cutoff
 bp_nrpm(plmf, n) # draw plot
-ggsave(paste0(path,"a5-boxplot-",n,"rpm-filtered.pdf"), width =5, height =4) # export pdf
+ggsave(paste0(path,"a5-boxplot-",n,"rpm-filtered.pdf"), width =7, height =5) # export pdf
 # ggsave(paste0(path, "a4-boxplot-rpm-filtered.pdf"), width=5, height=4)
 
 
@@ -183,7 +190,7 @@ g + geom_histogram(fill="white",color="black",binwidth=0.1) +
   geom_vline(xintercept = log(2,2)) +
   geom_vline(xintercept = log(3,2)) +
   theme_bw()
-ggsave(paste0(path, "a5-count-hist.pdf"), width=5, height=9)
+ggsave(paste0(path, "a5-count-hist.pdf"), width=5, height=25)
 ```
 <br>    
 
@@ -195,7 +202,7 @@ library(dplyr)
 pl2p5 <- lapply(pl, filter, rpm >=2.5)
 
 # export each df as .csv file
-path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/"
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/csv"
 lapply(names(pl2p5),
        function(x) write.csv(pl2p5[[x]], file=paste(paste0(path,x),"2p5rpm","csv",sep="."), row.names=F))
 
@@ -225,8 +232,80 @@ annotatePeaks.pl <filenmame>.bed mm9 -annStats <filenmame>.annStats.txt > <filen
 ```
 <br> 
 
-#### Run pair-wise analyses for peaks with differential counts
-+ DiffBind
+
+#### Create merged peak set and get normalized read counts 
++ DiffBind 
++ Used R 3.2.1 on Orchestra so didn't have to keep .bam locally
++ script called `a5.db.counts.R`
+```{r merge_and_count}
+library(DiffBind)
+
+# create sample sheet
+path <- "/groups/cbdm-db/jrd26/ATAC_crossbatch/R/Analysis5"
+
+Peaks <- list.files(paste0(path, "bed/rpm-filtered/"))
+
+# create columns for sample sheet
+SampleID <- unlist(strsplit(Peaks, split = ".2p5rpm.bed"))
+Tissue <- c(rep('Colon',4),rep('Muscle',2),rep('Spleen',8),rep("VAT",2))
+Factor <- unlist(strsplit(SampleID, split = "_rep1.2"))
+Factor <- unlist(strsplit(Factor, split = "_rep1"))
+Factor <- unlist(strsplit(Factor, split = "_rep2"))
+Factor <- unlist(strsplit(Factor, split = "_rep3"))
+Condition <- "Treg"
+Treatment <- c('Batch1.2','Batch2','Batch1.2','Batch2',rep('Batch2',2),'Batch1','Batch2',
+               'Batch1','Batch2',rep('Batch2',2),rep('Batch1',4))
+Replicate <- rep(c('1','2'),8)
+PeakCaller <- "homer"
+PeakFormat <- "bed"
+PeakPath <- list.files(paste0(path, "bed/rpm-filtered/"), full.names = T)
+bamPath <- list.files(paste0(path,"reads/"), full.names=T)
+
+samples <- cbind(SampleID = SampleID, 
+                 Tissue = Tissue, 
+                 Factor = Factor, 
+                 Condition = Condition,
+                 Treatment = Treatment,
+                 Replicate = Replicate,
+                 bamReads = bamPath,
+                 Peaks = PeakPath,
+                 PeakCaller = PeakCaller,
+                 PeakFormat = PeakFormat)
+write.csv(samples, "samples.csv", row.names=F)
+
+
+##-----loading data-----------------------------------------------------------------------------------
+# create DBA object
+ttreg <- dba(sampleSheet = "samples.csv", bRemoveRandom = T, minOverlap = 2)
+
+# make consensus peakset from replicates
+ttreg <- dba.peakset(ttreg, consensus = -DBA_REPLICATE)
+
+# make consensus peakset from samples and count reads
+ttreg <- dba.count(ttreg, peaks = ttreg$masks$Consensus, score = DBA_SCORE_RPKM)
+
+# save dba to file
+dba.save(ttre, file="ttreg", dir=path, pre="dba_", ext="RData", bMinimize=F)
+
+# export consensus peakset with read counts
+ttreg_con <- dba.peakset(ttreg, ttreg$masks$Consensus, bRetrieve = T, 
+                       writeFile=paste0(path,"a5-ttreg-consensus.rpkm.txt"), DataType=DBA_DATA_FRAME)
+write.csv(ttreg_con, file=paste0(path, "a5-ttreg-consensus.rpkm.csv"), row.names=F)
+
+# save read count correlation heatmap
+pdf(paste0(path,"a5.ttreg.reads.heat.pdf"), width=10, height=10, pagecentre = T)
+par(oma = c(3,2,2,3))
+dba.plotHeatmap(ttreg)
+dev.off()
+```
+
+
+
+
+
+
+
+
 
 
 
