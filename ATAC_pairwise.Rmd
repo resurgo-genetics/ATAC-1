@@ -283,10 +283,58 @@ pairw_con <- dba.peakset(pairw, pairw$masks$Consensus, bRetrieve = T,
 write.csv(pairw_con, file=paste(path, Tissue[1],'-vs-',Tissue[4], '.consensus.rpkm.csv',sep=""), row.names=F)
 
 # save read count correlation heatmap
-pdf(paste(path,Tissue[1],'-vs-',Tissue[2],'reads.heat.pdf',sep=""), width=10, height=10, pagecentre = T)
+pdf(paste(path,Tissue[1],'-vs-',Tissue[4],'.reads.heat.pdf',sep=""), width=10, height=10, pagecentre = T)
 par(oma = c(6,6,6,6))
 dba.plotHeatmap(pairw)
 dev.off()
+
+##------run differential affiniity analysis -----------------------------------------------------------------------
+# establish contrast using factor (==Cell Type) metadata
+contrast <- dba.contrast(pairw, categories = DBA_FACTOR, minMembers=2)
+
+# perform differential analysis
+a1 <- dba.analyze(contrast) # [a]nalysis1
+
+# return contrast results
+cr <- data.frame(dba.show(a1, bContrasts = T)) # [c]ontrast [r]esults
+write.table(cr, file=paste(path,Tissue[1],'-vs-',Tissue[4],'.contrasts.txt',sep=""), sep="\t", row.names=F)
+
+# export contrast results
+report <- dba.report(a1, th=1, bUsePval = F, bNormalized = T, bCounts = T,
+                     initString= paste(path,Tissue[1],'-vs-',Tissue[4],sep=""),
+                     file='contrast.allpeaks')
+
+# export plots from contrast 
+# set label
+label <- paste(Tissue[1],'-vs-', Tissue[4],sep="")
+
+# set fold-change and fdr cutoffs
+fold <- 3
+fdr <- 0.01
+
+# XY plot                
+dba.plotMA(a1, contrast = 1, fold=fold, bXY=T, th=fdr) 
+dev.print(pdf, file=paste(path,label,'_','FC',fold,'.xy.pdf',sep=""), width=5,height=5) 
+
+# MA plot
+dba.plotMA(a1, contrast = 1, fold=fold, bXY=F, th=fdr) 
+dev.print(pdf, file=paste(path,label,'_','FC',fold,'.ma.pdf',sep=""), width=5,height=5) 
+
+# heatmap of sites passing FC and FDR thresholds
+par(oma = c(12,3,4,3))
+
+dba.plotHeatmap(a1, report=dba.report(a1, contrast=1, th = fdr, bUsePval=F, fold=fold), correlations =F,
+                bLog=T, score=DBA_SCORE_RPKM, sortFun = var)
+dev.print(pdf, file=paste(path,label,'_','FC',fold,'_','FDR',fdr,'.pdf',sep=""))
+dev.print(png, file=paste(path,label,'_','FC',fold,'_','FDR',fdr,'.png',sep=""),width=600,height=600)
+
+
+##--------export sites passing filters -------------------------------------------------------------------------------
+# set fold-change and fdr cutoffs
+fold <- 3
+fdr <- 0.01
+
+
 
 ```
 
