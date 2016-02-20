@@ -28,7 +28,8 @@ opts_chunk$set(echo=F, eval=F, warning=F, message=F)
 + for each sample, call peaks in each replicate
 + then merge into single peakset
 + for each replicate, count reads in each peak, normalized to total library size
-+ export .csv files of peaks and counts
++ export .csv files of peaks and counts    
+
 **filter for strong peaks, merge peaks and get read counts for merged peaks**
 + [all subsequent steps done in this document]
 + plot distributions of read counts 
