@@ -89,7 +89,7 @@ multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
 #       n = fold-change cutoff
 volcano <- function(cr,n) {
   FCa <- as.numeric(sum(cr$Fold >=n ))    # calc number peaks >=n ; [F]old[C]hange[a]/b
-  FCb <- as.numeric(sum(cr$Fold <= (-n))) # number <=2 ; [F]old[C]hange[b]/a
+  FCb <- as.numeric(sum(cr$Fold <= (-n))) # number <=(-n) ; [F]old[C]hange[b]/a
   
   g <- ggplot(cr, aes(x=Fold, y=log(p.value,10),  # add data to plot
                       color=c(Fold>=n | Fold <=(-n))))
