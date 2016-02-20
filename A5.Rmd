@@ -396,7 +396,8 @@ annotatePeaks.pl a5-ttreg-rep-avg.bed mm9 > a5-ttreg-rep-avg.annotated.bed
 **Pseudo:**
 + Use peakID as rownames (would like to use GeneName or Functional Element but rownames have to be unique) 
 + Take random samples of different sizes 
-+ Plot distributions of read counts in samples vs distribution in population
++ Plot distributions of read counts in samples vs distribution in population    
+
 **TO DO: figure out different scales on facets, and how to boxplot with var.width =T**
 ```{r sample_clustering}
 
@@ -488,7 +489,8 @@ ggsave(file = paste(path,'a5-sample-pk-rpkm-dens.pdf'),width=8,height=7)
 
 #### Use samples for clustering start
 **Pseudo:**
-+ hclust, different distance metrics
++ hclust, different distance metrics     
+
 **TO DO:**
 + clustering on entire sample, saving clustered mat, only plotting every other or fourth in heat
 + how to do this? cluster rows? then columns? how to save results?
