@@ -30,13 +30,85 @@ opts_chunk$set(echo=F, eval=F, warning=F, message=F)
 + for each replicate, count reads in each peak, normalized to total library size
 + export .csv files of peaks and counts    
 
-**filter for strong peaks, merge peaks and get read counts for merged peaks**
+**filter for strong peaks, merge peaks and call differentially accessible peaks**
 + [all subsequent steps done in this document]
 + plot distributions of read counts 
 + filter for strong peaks (start with >=2.5 rpm)
-+ get genomic annotations of strong peaks (compare to unfilterd to check degree of TSS enrichment)
++ get genomic annotations of strong peaks (compare to unfilterd to check degree of TSS bias in filtered set)
 + use DiffBind to call differentially accessible peaks
 <br>    
+
+#### Special functions for plotting
+```{r plotting_functions}
+# plot multiple plots per page
+# ggplot objects can be passed in ..., or to plotlist (as a list of ggplot objects)
+# - cols:   Number of columns in layout
+# - layout: A matrix specifying the layout. If present, 'cols' is ignored.
+#
+# If the layout is something like matrix(c(1,2,3,3), nrow=2, byrow=TRUE),
+# then plot 1 will go in the upper left, 2 will go in the upper right, and
+# 3 will go all the way across the bottom.
+multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
+  library(grid)
+
+  # Make a list from the ... arguments and plotlist
+  plots <- c(list(...), plotlist)
+
+  numPlots = length(plots)
+
+  # If layout is NULL, then use 'cols' to determine layout
+  if (is.null(layout)) {
+    # Make the panel
+    # ncol: Number of columns of plots
+    # nrow: Number of rows needed, calculated from # of cols
+    layout <- matrix(seq(1, cols * ceiling(numPlots/cols)),
+                    ncol = cols, nrow = ceiling(numPlots/cols))
+  }
+
+ if (numPlots==1) {
+    print(plots[[1]])
+
+  } else {
+    # Set up the page
+    grid.newpage()
+    pushViewport(viewport(layout = grid.layout(nrow(layout), ncol(layout))))
+
+    # Make each plot, in the correct location
+    for (i in 1:numPlots) {
+      # Get the i,j matrix positions of the regions that contain this subplot
+      matchidx <- as.data.frame(which(layout == i, arr.ind = TRUE))
+
+      print(plots[[i]], vp = viewport(layout.pos.row = matchidx$row,
+                                      layout.pos.col = matchidx$col))
+    }
+  }
+}
+
+# volcano plots from ggplot2
+# ARGS: cr = [c]ontrast[r]esults from Diffbind, as data frame
+#       n = fold-change cutoff
+volcano <- function(cr,n) {
+  FCa <- as.numeric(sum(cr$Fold >=n ))    # calc number peaks >=n ; [F]old[C]hange[a]/b
+  FCb <- as.numeric(sum(cr$Fold <= (-n))) # number <=2 ; [F]old[C]hange[b]/a
+  
+  g <- ggplot(cr, aes(x=Fold, y=log(p.value,10),  # add data to plot
+                      color=c(Fold>=n | Fold <=(-n))))
+  
+  g + geom_point(alpha=0.5) +   # plot
+  theme_bw() +
+  scale_color_manual(values=c('black','red')) + 
+  xlab(paste(Tissue[1],'/',Tissue[4],' (log2 FC)',sep="")) + 
+  ylab('log10 pvalue') +
+  scale_x_continuous(limits=c(-8,8),breaks=seq(-8,8,by=1)) + 
+  annotate("text", x=6, y=0, label=FCa, color="red") +
+  annotate("text", x=-6, y=0, label=FCb, color="red") +
+  guides(color=FALSE)
+}
+
+```
+<br>  
+
+
 
 
 #### Import peak files into peak list and export bed files
@@ -105,7 +177,11 @@ ppf <- cbind(ppf,"rpm_cutoff" = cutoffs) # add column for each cutoff
 
 # write to file
 path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A6-vat-spleen/"
-write.csv(ppf, file = paste0(path,"peak_totals_rpm_filtered.csv"), row.names=F)
+# set sample names for file export
+sample_name <- unique(unlist((strsplit(filenames1, split = '_Treg_rep[1,2].csv'))))
+sample_name <- unlist(strsplit(sample_name, split='_w???'))
+
+write.csv(ppf, file = paste0(path,sample_name[1],'-vs-',sample_name[3],'_peak_totals_rpm_filtered.csv',sep=""), row.names=F)
 
 # generate xtable
 print(xtable(ppf), type="html", include.rownames=F)
@@ -119,7 +195,7 @@ g + geom_boxplot() +
   ylab('Peaks passing filter') +
   xlab('rpm cutoff') + 
   theme_bw()
-ggsave(paste0(path, "a6-peakcut-boxplot.pdf"), width=7, height=5) # export pdf
+ggsave(paste0(path,sample_name[1],'-vs-',sample_name[3], ".peakcut.boxplot.pdf"), width=7, height=5) # export pdf
 ```
 <br>     
 
@@ -155,7 +231,7 @@ g + geom_boxplot(varwidth =T) +
   theme_bw() + 
   ylim(-2,10) +
   theme(axis.title.x = element_blank())
-ggsave(paste0(path, "a6-boxplot.pdf"), width=7, height=5) # export pdf
+ggsave(paste0(path,sample_name[1],'-vs-',sample_name[3], ".allpeaks.boxplot.pdf"), width=7, height=5) # export pdf
 
 # draw boxplot of peaks passing n rpm
 # define function to filter peaks and draw plot
@@ -171,7 +247,7 @@ bp_nrpm <- function(df, n) {
 
 n <- 2.5 # set rpm cutoff
 bp_nrpm(plmf, n) # draw plot
-ggsave(paste0(path,"a6-boxplot-",n,"rpm-filtered.pdf"), width =7, height =5) # export pdf
+ggsave(paste0(path,sample_name[1],'-vs-',sample_name[3],'.',n,"rpm.filtered.pdf"), width =7, height =5) # export pdf
 # ggsave(paste0(path, "a4-boxplot-rpm-filtered.pdf"), width=5, height=4)
 
 
@@ -183,7 +259,7 @@ g + geom_histogram(fill="white",color="black",binwidth=0.1) +
   geom_vline(xintercept = log(2,2)) +
   geom_vline(xintercept = log(3,2)) +
   theme_bw()
-ggsave(paste0(path, "a6-count-hist.pdf"), width=5, height=25)
+ggsave(paste0(path,sample_name[1],'-vs-', sample_name[3], ".allpeaks.hist.pdf"), width=12, height=10)
 ```
 <br>    
 
@@ -211,7 +287,6 @@ lapply(names(pl2p5bed ),
                               quote=F, row.names=F,col.names=c("#chr","start","end")))
 ```
 <br>    
-
 
 
 #### Get genomic annotations of all peaks and strong peaks
@@ -296,8 +371,9 @@ contrast <- dba.contrast(pairw, categories = DBA_FACTOR, minMembers=2)
 # perform differential analysis
 a1 <- dba.analyze(contrast) # [a]nalysis1
 
-# return contrast results
+# return contrast results (p-value,FDR,fold) for all peaks
 cr <- data.frame(dba.show(a1, bContrasts = T)) # [c]ontrast [r]esults
+# write output to file
 write.table(cr, file=paste(path,Tissue[1],'-vs-',Tissue[4],'.contrasts.txt',sep=""), sep="\t", row.names=F)
 
 # export contrast results
@@ -328,16 +404,41 @@ dba.plotHeatmap(a1, report=dba.report(a1, contrast=1, th = fdr, bUsePval=F, fold
                 bLog=T, score=DBA_SCORE_RPKM, sortFun = var)
 dev.print(pdf, file=paste(path,label,'_','FC',fold,'_','FDR',fdr,'.pdf',sep=""))
 dev.print(png, file=paste(path,label,'_','FC',fold,'_','FDR',fdr,'.png',sep=""),width=600,height=600)
-
-
-##--------export sites passing filters -------------------------------------------------------------------------------
-# set fold-change and fdr cutoffs
-fold <- 3
-fdr <- 0.01
-
-
-
 ```
+<br>    
+
+
+#### Plot results of differential accessibility analysis
+```{r diffbind_results}
+library(ggplot2)
+
+# set path
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A6-vat-spleen/"
+
+# import results of dba contrast
+filename <- paste(Tissue[1],'-vs-', Tissue[4],'_contrast.allpeaks.csv',sep="")
+cr <- read.csv(file=paste0(path,filename),header=T) #[c]ontrast[r]esults
+
+# generate plots for FC=2, 4 and 8
+v_fc2 <- volcano(cr, 1) 
+v_fc4 <- volcano(cr, 2)
+v_fc8 <- volcano(cr ,3)
+
+# plot on single page and print
+pdf(paste0(path,sample_name[1],'-vs-', sample_name[3], ".fc.pval.pdf"), width=12, height=10)
+multiplot(v_fc2, v_fc4, v_fc8, cols=3)
+dev.off()
+
+# print
+(paste0(path,sample_name[1],'-vs-', sample_name[3], ".fc.pval.pdf"), width=12, height=10)
+```
+<br>  
+
+
+#### Motifs enriched in differentially accessible peaks
++ TODO
+<br>  
+
 
 
 
