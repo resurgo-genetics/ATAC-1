@@ -370,8 +370,15 @@ save(ttregl2, file=paste(path,'a5-ttreg-rep-avg-counts-rpkm-mat.RDa',sep=""))
 <br>  
 
 
+#### Annotate peaks with closest gene and functional element, use as rownames dim in read count matrix
++ TODO
++ do this with chr,start,end above
++ then set gene names or functional element as row.names in matrix?
+<br>
 
-#### Start clustering with samples of data
+
+
+#### Take samples of peaks, compare sample distributions to population
 + Pseudo:
 ++ Take random samples of different sizes and compare read count distribution to population
 ++ Compare distributions of sample peak heights to population
@@ -427,7 +434,78 @@ g + geom_density() +
 path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/"
 ggsave(file = paste(path,'a5-sample-pk-rpkm-dens.pdf'),width=8,height=7)
 ```
-<br>  
+<br>    
+
+
+
+
+#### Use samples for clustering start
++ Pseudo:
+++ hclust, different distance metrics
++ TO DO:
+++ clustering on entire sample, saving clustered mat, only plotting every other or fourth in heat
+++ how to do this? cluster rows? then columns? how to save results?
+```{r clust}
+# import peak rpkm matrix
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/"
+filename <- 'a5-ttreg-rep-avg-counts-rpkm-mat.RDa'
+load(paste0(path,filename))
+
+# look over
+str(ttregl2)
+head(ttregl2,5)
+summary(ttregl2)
+
+## repeat sampling from above
+## for clustering, keep each peak sample matrix in list and refer to by list index
+
+##---- visualize on small sample -----------------------------------------------------------------------------------------------------
+# get nice colors
+library(RColorBrewer)
+
+# display spectra
+display.brewer.all()
+
+# set colors
+niceCols <- colorRampPalette(rev(brewer.pal(11, 'Spectral')))(50)
+
+# test default heatmap
+library(pheatmap)
+
+# heatmap using default hclust on peaks(rows) and samples(columns)
+pheatmap(sl[[3]], color = niceCols)
+
+## matplots on select peaks
+# extract small subsets
+set1 <- c('TPX2','CCNA2','AURKA','CEP55','CCNB1')
+set2 <- c('MAB21L3','CCNE1','TCF19///TF19','ZBTB14')
+set2 <- c('MAB21L3','CCNE1','ZBTB14')
+
+# draw parallel coordinates plot aka matplot to see expression levels
+# have to transpose mat for matplot
+matplot(t(dat[set1,]),
+        type='l',lwd=2,col='skyblue',lty=1,
+        ylim=c(8,14), xlab='Time',ylab = 'Log2 expression value')
+# use lines() to superimpose values for set2
+for (i in 1:length(set2)) {
+  lines(dat[set2[i],], type = 'l', lwd=2, col='firebrick')
+}
+
+
+
+##----try hclust -------------------------------------------------------------------------------------------------------------------
+# try different distance functions
+pheatmap(sl[[3]], color= niceCols, clustering_distance_rows = 'canberra', clusterin_distance_cols = 'canberra')
+
+pheatmap(sl[[3]], color= niceCols, clustering_distance_rows = 'maximum', clusterin_distance_cols = 'maximum')
+
+pheatmap(sl[[3]], color= niceCols, clustering_distance_rows = 'minkowski', clusterin_distance_cols = 'minkowski')
+
+pheatmap(sl[[3]], color= niceCols, clustering_distance_rows = 'correlation', clusterin_distance_cols = 'correlation')
+
+# as an alternative, try Wards-linkage clustering
+hc.ward <- hclust(distDat, method = 'ward.D', members=NULL)
+plot(hc.ward)
 
 
 
@@ -435,9 +513,39 @@ ggsave(file = paste(path,'a5-sample-pk-rpkm-dens.pdf'),width=8,height=7)
 
 
 
-#### Annotate peaks with closest gene, use as rownames dim in read count matrix
-+ do this with chr,start,end above
-+ then set gene names as row.names in matrix?
+
+
+## ---- deprecated ------------------------------------------------------------------------------------------------------------------
+
+#niceCols <- rev(brewer.pal(8, 'Spectral'))
+#niceCols <- colorRampPalette(rev(brewer.pal(n=9,name ='RdYlBu')))(100)
+
+## Different distance functions using pheatmap
+# df <- function(x) dist(x, method="euclidean") 
+# heatmap(dat[seq(1,nrow(dat),by =4), ], labRow="", labCol="", distfun = df)
+
+# cluster and plot every other peak
+# pheatmap(sl[[3]][seq(from = 1, to = nrow(sl[[3]]), by = 2),], color=niceCols) 
+
+
+
+## ----- working
+# make distance matrix
+distDat <- dist(sl[[1]])
+
+# perform default hc = complete linkage hc
+hc <- hclust(distDat)
+plot(hc)
+```
+
+
+
+
+
+
+
+
+
 
 
 
