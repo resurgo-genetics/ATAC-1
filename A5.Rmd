@@ -223,8 +223,7 @@ lapply(names(pl2p5bed ),
 #### Get genomic annotations of all peaks and strong peaks
 + are they biased for TSS?
 + HOMER annotatePeaks.pl
-+ will write a script to loop over many bed files
-+ for now ran each one-by-one
++ TODO
 ```{r annotate_pks, engine="bash"}
 annotatePeaks.pl <filenmame> mm9 -annStats <filenmame>.annStats.txt > <filenmame>.annpks.txt
 
@@ -305,13 +304,13 @@ dev.off()
 
 
 #### Generate read count matrix to use for clustering
-+ Pseudo:
-++ Plot distributions of read counts in the merged peak set for all samples before averaging replicates
-++ Take average of replicate values for each sample
-++ Plot distributions of read counts after averaging reps
-++ Convert replicate averages to log2
-++ Give each peak a unique ID
-++ Export avg rpkm, log2rpkm of avgs, 
+**Pseudo:**
++ Plot distributions of read counts in the merged peak set for all samples before averaging replicates
++ Take average of replicate values for each sample
++ Plot distributions of read counts after averaging reps
++ Convert replicate averages to log2
++ Give each peak a unique ID
++ Export avg rpkm, log2rpkm of avgs, 
 ```{r count_matrix}
 ##----plot read count distributions --------------------------------------------------------------------------------
 
@@ -394,11 +393,11 @@ annotatePeaks.pl a5-ttreg-rep-avg.bed mm9 > a5-ttreg-rep-avg.annotated.bed
 
 
 #### Take samples of peaks, compare sample distributions to population
-+ Pseudo:
-  ++ Use peakID as rownames (would like to use GeneName or Functional Element but rownames have to be unique) 
-  ++ Take random samples of different sizes 
-  ++ Plot distributions of read counts in samples vs distribution in population
-+ TO DO: figure out different scales on facets, and how to boxplot with var.width =T
+**Pseudo:**
++ Use peakID as rownames (would like to use GeneName or Functional Element but rownames have to be unique) 
++ Take random samples of different sizes 
++ Plot distributions of read counts in samples vs distribution in population
+**TO DO: figure out different scales on facets, and how to boxplot with var.width =T**
 ```{r sample_clustering}
 
 # set path and filename
@@ -488,13 +487,13 @@ ggsave(file = paste(path,'a5-sample-pk-rpkm-dens.pdf'),width=8,height=7)
 
 
 #### Use samples for clustering start
-+ Pseudo:
-++ hclust, different distance metrics
-+ TO DO:
-++ clustering on entire sample, saving clustered mat, only plotting every other or fourth in heat
-++ how to do this? cluster rows? then columns? how to save results?
+**Pseudo:**
++ hclust, different distance metrics
+**TO DO:**
++ clustering on entire sample, saving clustered mat, only plotting every other or fourth in heat
++ how to do this? cluster rows? then columns? how to save results?
 ```{r clust}
-# import peak log2 rpkm matrix
+# import peak rpkm matrix
 path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/"
 filename <- 'a5-ttreg-peak-sample-list.RDa'
 load(paste0(path,filename))
