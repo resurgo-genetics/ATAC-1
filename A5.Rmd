@@ -296,11 +296,138 @@ ttreg_con <- dba.peakset(ttreg, ttreg$masks$Consensus, bRetrieve = T,
 write.csv(ttreg_con, file=paste0(path, "a5-ttreg-consensus.rpkm.csv"), row.names=F)
 
 # save read count correlation heatmap
-pdf(paste0(path,"a5.ttreg.reads.heat.pdf"), width=10, height=10, pagecentre = T)
+pdf(paste0(path,"a5-ttreg-reads-heat.pdf"), width=10, height=10, pagecentre = T)
 par(oma = c(3,2,2,3))
 dba.plotHeatmap(ttreg)
 dev.off()
 ```
+<br>  
+
+
+#### Generate read count matrix to use for clustering
++ Pseudo:
+++ Plot distributions of merged peak counts for all samples
+++ Take average of replicate values for each sample
+++ Convert to log2
+```{r count_matrix}
+##----plot read count distributions --------------------------------------------------------------------------------
+
+# import peak file
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/"
+ttreg <- read.csv(file = paste(path,'a5-ttreg-consensus.rpkm.csv',sep=""), header =T)
+
+# compare read count distributions of raw data
+pdf(paste0(path,"a5-ttreg-merged-counts-rpkm.pdf"), width=8, height=6, pagecentre = T)
+par(oma = c(4,1,0.5,1))
+boxplot(log(ttreg[4:19],2), las = 2, cex.axis = 0.7, 
+        ylab='log2 rpkm', main='merged atac peaks, n=37756')
+dev.off()
+
+# try rotated view
+boxplot(log(ttreg[4:19],2), las = 2, cex.axis = 0.5, horizontal =T)
+
+##----avg replicates and log2 convert --------------------------------------------------------------------------------
+# take replicate averages and plot
+library(dplyr)
+
+# compute replicate averages 
+ttregavg <- ttreg %>% # ttreg averages
+  transmute(mean1 = rowMeans(.[4:5]),
+            mean2 = rowMeans(.[6:7]),
+            mean3 = rowMeans(.[8:9]),
+            mean4 = rowMeans(.[10:11]),
+            mean5 = rowMeans(.[12:13]),
+            mean6 = rowMeans(.[14:15]),
+            mean7 = rowMeans(.[16:17]),
+            mean8 = rowMeans(.[18:19]))
+
+# generate new column names
+samples <- names(ttreg[-c(1:3)])
+samples <- as.character(strsplit(samples, split = '_rep1.2'))
+samples <- as.character(strsplit(samples, split='_rep[1,2,3]'))
+samples <- unique(samples)
+
+# rename columns
+names(ttregavg) <- samples
+
+# boxplot average read count distributions
+pdf(paste0(path,"a5-ttreg-rep-avg-counts-rpkm.pdf"), width=8, height=6, pagecentre = T)
+par(oma = c(4,1,0.5,1))
+boxplot(log(ttregavg,2), las = 2, cex.axis = 0.7, 
+        ylab='rep average log2rpkm', main='merged atac peaks, n=37756, replicate averages')
+dev.off()
+
+# export df to file
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/"
+write.csv(ttregavg, file=paste(path,'a5-ttreg-rep-avg-counts-rpkm.csv',sep=""), row.names=F)
+
+# convert values to log2 and convert df to matrix
+ttregl2 <- sapply(ttregavg, log,2) #ttreg[l]og2
+
+# save
+save(ttregl2, file=paste(path,'a5-ttreg-rep-avg-counts-rpkm-mat.RDa',sep=""))
+```
+<br>  
+
+
+
+#### Start clustering with samples of data
++ Pseudo:
+++ Take random samples of different sizes and compare read count distribution to population
+++ Compare distributions of sample peak heights to population
+++ TO DO: figure out different scales on facets, and how to boxplot with var.width =T
+```{r sample_clustering}
+
+# vector of samples sizes
+sizes <- c(1000,5000,10000,15000,20000) # vector of sample sizes
+sl <- list() #[s]ample [l]ist
+
+# generate sample matrices of different sizes, combine into list
+for(i in 1:length(sizes)) {
+  m <- matrix(nrow=1000,ncol=ncol(ttregl2),data = 0)
+  m <- ttregl2[sample(nrow(ttregl2), size=sizes[i],replace=F),]
+  sl[[i]] <- m
+}
+# check matrices are correct sizes
+sapply(sl, dim)
+
+# name list elements
+names(sl) <- paste('npeaks_',sizes,sep="") 
+
+# melt sample list to plot
+library(reshape2)
+library(ggplot2)
+msl <- melt(sl)[-1] # [m]elted[s]ample[l]ist
+names(msl) <- c('CellType','log2rpkm','PeakSample') # rename columns 
+msl$PeakSample <- factor(msl$PeakSample, levels = unique(msl$PeakSample)) # convert peak sample ID to factor
+
+# melt original complete matrix to plot
+mpl <- melt(ttregl2)[-1] # [m]elted[p]eak[l]ist
+names(mpl) <- c('CellType','log2rpkm')
+mpl$PeakSample <- 'allpeaks'
+
+# combine the two lists
+mtl <- rbind(msl,mpl) #[m]elted[t]otal[l]ist
+
+# plot histograms
+g <- ggplot(mtl, aes(x=log2rpkm))
+g + geom_histogram(fill="white",color="black",binwidth=0.1) + 
+  facet_grid(PeakSample ~.) +
+  theme_bw()
+# save
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/"
+ggsave(file = paste(path,'a5-sample-pk-rpkm-hist.pdf'),width=8,height=7)
+
+# plot densities
+g <- ggplot(mtl, aes(x=log2rpkm))
+g + geom_density() + 
+  facet_grid(PeakSample ~.) +
+  theme_bw()
+# save
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/"
+ggsave(file = paste(path,'a5-sample-pk-rpkm-dens.pdf'),width=8,height=7)
+```
+<br>  
 
 
 
@@ -308,6 +435,9 @@ dev.off()
 
 
 
+#### Annotate peaks with closest gene, use as rownames dim in read count matrix
++ do this with chr,start,end above
++ then set gene names as row.names in matrix?
 
 
 
