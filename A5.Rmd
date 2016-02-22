@@ -312,7 +312,7 @@ dev.off()
 + Give each peak a unique ID
 + Export avg rpkm, log2rpkm of avgs, 
 ```{r count_matrix}
-##----plot read count distributions --------------------------------------------------------------------------------
+##----plot read count distributions -------------------------------------------------------------
 
 # import peak file
 path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/"
@@ -328,7 +328,7 @@ dev.off()
 # try rotated view
 boxplot(log(ttreg[4:19],2), las = 2, cex.axis = 0.5, horizontal =T)
 
-##----avg replicates and log2 convert --------------------------------------------------------------------------------
+##----avg replicates and log2 convert ----------------------------------------------------------------
 # take replicate averages and plot
 library(dplyr)
 
@@ -391,7 +391,6 @@ annotatePeaks.pl a5-ttreg-rep-avg.bed mm9 > a5-ttreg-rep-avg.annotated.bed
 ```
 
 
-
 #### Take samples of peaks, compare sample distributions to population
 **Pseudo:**
 + Use peakID as rownames (would like to use GeneName or Functional Element but rownames have to be unique) 
@@ -400,14 +399,13 @@ annotatePeaks.pl a5-ttreg-rep-avg.bed mm9 > a5-ttreg-rep-avg.annotated.bed
 
 **TO DO: figure out different scales on facets, and how to boxplot with var.width =T**
 ```{r sample_clustering}
-
 # set path and filename
 path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/"
 filename <- 'a5-ttreg-rep-avg-annotated.bed.txt'
 # read in
 ttreg <- read.delim(paste0(path,filename), header=T, check.names=T, sep='\t')
 
-##----add Peak IDs as rownames --------------------------------------------------------------------------------------------------------
+##---- add Peak IDs as rownames --------------------------------------------------------------------------
 # check length of annotation want to use as rowID
 length(ttreg$PeakID)
 
@@ -427,7 +425,7 @@ ttregm <- as.matrix(ttregm[-1])
 write.csv(ttregm, file = paste0(path,'a5-ttreg-rep-avg-counts-log2rpkm-mat.csv'))
 save(ttregm, file = paste0(path, 'a5-ttreg-rep-avg-counts-log2rpmk-mat.RDa'))
 
-##---- sample peaks --------------------------------------------------------------------------------------------------------------------
+##---- sample peaks --------------------------------------------------------------------------------------
 # read in matrix of peak scores
 ttregm <- read.csv(file = paste0(path,'a5-ttreg-rep-avg-counts-log2rpkm-mat.csv'), row.names=1, header=T)
 ttregm <- as.matrix(ttregm)
@@ -450,7 +448,7 @@ names(sl) <- paste('npeaks_',sizes,sep="")
 # save list to file
 save(sl, file = paste0(path,'a5-ttreg-peak-sample-list.RDa'))
 
-##---- plot --------------------------------------------------------------------------------------------------------------------------
+##---- plot -----------------------------------------------------------------------------------------------
 # melt sample list to plot
 library(reshape2)
 library(ggplot2)
@@ -487,7 +485,7 @@ ggsave(file = paste(path,'a5-sample-pk-rpkm-dens.pdf'),width=8,height=7)
 <br>    
 
 
-#### Use samples for clustering start
+#### Start by clustering random samples generated from set of all strong peaks
 **Pseudo:**
 + hclust, different distance metrics     
 
@@ -495,7 +493,7 @@ ggsave(file = paste(path,'a5-sample-pk-rpkm-dens.pdf'),width=8,height=7)
 + clustering on entire sample, saving clustered mat, only plotting every other or fourth in heat
 + how to do this? cluster rows? then columns? how to save results?
 ```{r clust}
-# import peak rpkm matrix
+# import peak samples
 path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/"
 filename <- 'a5-ttreg-peak-sample-list.RDa'
 load(paste0(path,filename))
@@ -509,7 +507,7 @@ summary(sl[[3]])
 
 ## for clustering, keep each peak sample matrix in list and refer to by list index
 
-##---- visualize on small sample -----------------------------------------------------------------------------------------------------
+##---- visualize on small sample -----------------------------------------------------------------------------
 # get nice colors
 library(RColorBrewer)
 
@@ -524,48 +522,118 @@ library(pheatmap)
 
 # heatmap using default hclust on peaks(rows) and samples(columns)
 pheatmap(sl[[3]], color = niceCols)
+# visualize every 200th peak
+pheatmap(sl[[3]][seq(from = 5000, to = nrow(sl[[3]]), by = 200),],color = niceCols)
+
 
 ## matplots on select peaks
-# extract small subsets
-set1 <- c('TPX2','CCNA2','AURKA','CEP55','CCNB1')
-set2 <- c('MAB21L3','CCNE1','TCF19///TF19','ZBTB14')
-set2 <- c('MAB21L3','CCNE1','ZBTB14')
+npeaks10K <- sl[[3]]
+str(npeaks10K)
 
-# draw parallel coordinates plot aka matplot to see expression levels
+# extract small subsets
+set1 <- c('peak_20075','peak_5710','peak_25150','peak_24139')
+set2 <- c('peak_22214','peak_20117','peak_34264')
+
 # have to transpose mat for matplot
-matplot(t(dat[set1,]),
+matplot(t(sl[[3]][set1,]),
         type='l',lwd=2,col='skyblue',lty=1,
-        ylim=c(8,14), xlab='Time',ylab = 'Log2 expression value')
+        ylim=c(-10,10), xlab='Cell Type',ylab = 'Log2 rpkm')
+
 # use lines() to superimpose values for set2
 for (i in 1:length(set2)) {
-  lines(dat[set2[i],], type = 'l', lwd=2, col='firebrick')
+  lines(sl[[3]][set2[i],], type = 'l', lwd=2, col='firebrick')
 }
 
 
+##----try hclust -------------------------------------------------------------------------------------------
+# try different clustering methods with each distance function
+# distance: 'euclidean','maximum','manhattan','canberra','binary','minkowski','correlation'
+# methods: 'ward.D','ward.D2','single','complete','average','mcquitty','median','centroid'
 
-##----try hclust -------------------------------------------------------------------------------------------------------------------
-# try different distance functions
-pheatmap(sl[[3]], color= niceCols, clustering_distance_rows = 'canberra', clusterin_distance_cols = 'canberra')
+pheatmap(sl[[3]], color= niceCols, clustering_distance_rows = 'manhattan', clustering_distance_cols = 'manhattan')
+pheatmap(sl[[3]], color= niceCols, clustering_distance_rows = 'manhattan', clustering_distance_cols = 'manhattan',
+         cluster_method = 'ward.D')
+pheatmap(sl[[3]], color= niceCols, clustering_distance_rows = 'manhattan', clustering_distance_cols = 'manhattan',
+         cluster_method = 'ward.D2')
+pheatmap(sl[[3]], color= niceCols, clustering_distance_rows = 'manhattan', clustering_distance_cols = 'manhattan',
+         cluster_method = 'single')
+pheatmap(sl[[3]], color= niceCols, clustering_distance_rows = 'manhattan', clustering_distance_cols = 'manhattan',
+         cluster_method = 'average')
+pheatmap(sl[[3]], color= niceCols, clustering_distance_rows = 'manhattan', clustering_distance_cols = 'manhattan',
+         cluster_method = 'mcquitty')
+pheatmap(sl[[3]], color= niceCols, clustering_distance_rows = 'manhattan', clustering_distance_cols = 'manhattan',
+         cluster_method = 'median')
+pheatmap(sl[[3]], color= niceCols, clustering_distance_rows = 'manhattan', clustering_distance_cols = 'manhattan',
+         cluster_method = 'centroid')
+## results:
+# distance: minkowski > manhattan > max >= euclidean > canberra >> correlation >>> binary
+# method: ward > complete = average = single = mcquitty
+# so far best: mink+ward.D2 (really, all method similar), max+ward.D2, euclidean + ward.D, euclid (avg=single=mcq=median)
 
-pheatmap(sl[[3]], color= niceCols, clustering_distance_rows = 'maximum', clusterin_distance_cols = 'maximum')
 
-pheatmap(sl[[3]], color= niceCols, clustering_distance_rows = 'minkowski', clusterin_distance_cols = 'minkowski')
+# try clustering on row-scaled or column-scaled data
+# distance: 'euclidean','maximum','manhattan','canberra','binary','minkowski','correlation'
+# methods: 'ward.D','ward.D2','single','complete','average','mcquitty','median','centroid'
+pheatmap(sl[[3]], color= niceCols, clustering_distance_rows = 'minkowski', clustering_distance_cols = 'minkowski', 
+         scale = 'column')
+pheatmap(sl[[3]], color= niceCols, clustering_distance_rows = 'minkowski', clustering_distance_cols = 'minkowski',
+         cluster_method = 'ward.D', scale = 'column')
+pheatmap(sl[[3]], color= niceCols, clustering_distance_rows = 'minkowski', clustering_distance_cols = 'minkowski',
+         cluster_method = 'ward.D2', scale = 'column')
+pheatmap(sl[[3]], color= niceCols, clustering_distance_rows = 'minkowski', clustering_distance_cols = 'minkowski',
+         cluster_method = 'single', scale = 'column')
+pheatmap(sl[[3]], color= niceCols, clustering_distance_rows = 'minkowski', clustering_distance_cols = 'minkowski',
+         cluster_method = 'average', scale = 'column')
+pheatmap(sl[[3]], color= niceCols, clustering_distance_rows = 'minkowski', clustering_distance_cols = 'minkowski',
+         cluster_method = 'mcquitty', scale = 'column')
+pheatmap(sl[[3]], color= niceCols, clustering_distance_rows = 'minkowski', clustering_distance_cols = 'minkowski',
+         cluster_method = 'median', scale = 'column')
+pheatmap(sl[[3]], color= niceCols, clustering_distance_rows = 'minkowksi', clustering_distance_cols = 'minkowski',
+         cluster_method = 'centroid', scale = 'column')
+## results:
+# distance: euclidean = max = manhat = canberra = mink = corr >> binary, all bad and VAT cluster far from muscle
+# method: for all methods
+# so far best: none ; row is bad, column-scaling is slightly better but not as good as no scale
 
-pheatmap(sl[[3]], color= niceCols, clustering_distance_rows = 'correlation', clusterin_distance_cols = 'correlation')
-
-# as an alternative, try Wards-linkage clustering
-hc.ward <- hclust(distDat, method = 'ward.D', members=NULL)
-plot(hc.ward)
 
 
+# try different row-clust mixed with column by pearson? or euclidean?
+```
+<br>  
+
+
+#### Clustering on only the variable peaks OR separately on similar and variable
+**Pseudo:**
++ decide between using variance or FC >= n in >=1 pair-wise   
++ could do FC >=4 --> hc ; FC <4 --> hc
++ what if row-scale after finding good clusters
+
+
+#### Finding best heatmap colors for clusters
+```{r colors}
+eqSpect <- colorRampPalette(
+               c("#f2003c", "#F66900", "#F19100", "#F1B100",
+                 "#EFD300", "#f0ea00", "#CBDB00", "#9DD501",
+                 "#5ED108", "#00AF63", "#00A78E", "#00a3ac",
+                 "#0093af", "#0082b2", "#006ebf", "#4F37C2",
+                 "#8000D3", "#A001BF", "#BA00A4", "#D0007F"),
+                 space="rgb",
+                 interpolate="spline")
+n <- 12
+
+niceCols <- eqSpect(n)
+
+# or 
+niceCols <- colorRampPalette(rev(brewer.pal(11, 'Spectral')))(50)
+```
+<br>  
 
 
 
 
-
-
-
-## ---- deprecated ------------------------------------------------------------------------------------------------------------------
+#### Deprecated
+```{r deprecated}
+## ---- deprecated ------------------------------------------------------------
 
 #niceCols <- rev(brewer.pal(8, 'Spectral'))
 #niceCols <- colorRampPalette(rev(brewer.pal(n=9,name ='RdYlBu')))(100)
@@ -577,6 +645,10 @@ plot(hc.ward)
 # cluster and plot every other peak
 # pheatmap(sl[[3]][seq(from = 1, to = nrow(sl[[3]]), by = 2),], color=niceCols) 
 
+# extract small subsets
+set1 <- c('TPX2','CCNA2','AURKA','CEP55','CCNB1')
+set2 <- c('MAB21L3','CCNE1','TCF19///TF19','ZBTB14')
+set2 <- c('MAB21L3','CCNE1','ZBTB14')
 
 
 ## ----- working
@@ -586,16 +658,11 @@ distDat <- dist(sl[[1]])
 # perform default hc = complete linkage hc
 hc <- hclust(distDat)
 plot(hc)
+
+# as an alternative, try Wards-linkage clustering
+hc.ward <- hclust(distDat, method = 'ward.D', members=NULL)
+plot(hc.ward)
 ```
-
-
-
-
-
-
-
-
-
 
 
 
