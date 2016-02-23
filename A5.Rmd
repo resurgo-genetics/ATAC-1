@@ -550,25 +550,26 @@ for (i in 1:length(set2)) {
 # distance: 'euclidean','maximum','manhattan','canberra','binary','minkowski','correlation'
 # methods: 'ward.D','ward.D2','single','complete','average','mcquitty','median','centroid'
 
-pheatmap(sl[[3]], color= niceCols, clustering_distance_rows = 'manhattan', clustering_distance_cols = 'manhattan')
-pheatmap(sl[[3]], color= niceCols, clustering_distance_rows = 'manhattan', clustering_distance_cols = 'manhattan',
+pheatmap(sl[[3]], color= niceCols, clustering_distance_rows = 'minkowski', clustering_distance_cols = 'minkowski')
+pheatmap(sl[[3]], color= niceCols, clustering_distance_rows = 'minkowski', clustering_distance_cols = 'minkowski',
          cluster_method = 'ward.D')
-pheatmap(sl[[3]], color= niceCols, clustering_distance_rows = 'manhattan', clustering_distance_cols = 'manhattan',
+pheatmap(sl[[3]], color= niceCols, clustering_distance_rows = 'minkowski', clustering_distance_cols = 'minkowski',
          cluster_method = 'ward.D2')
-pheatmap(sl[[3]], color= niceCols, clustering_distance_rows = 'manhattan', clustering_distance_cols = 'manhattan',
+pheatmap(sl[[3]], color= niceCols, clustering_distance_rows = 'minkowski', clustering_distance_cols = 'minkowski',
          cluster_method = 'single')
-pheatmap(sl[[3]], color= niceCols, clustering_distance_rows = 'manhattan', clustering_distance_cols = 'manhattan',
+pheatmap(sl[[3]], color= niceCols, clustering_distance_rows = 'minkowski', clustering_distance_cols = 'minkowski',
          cluster_method = 'average')
-pheatmap(sl[[3]], color= niceCols, clustering_distance_rows = 'manhattan', clustering_distance_cols = 'manhattan',
+pheatmap(sl[[3]], color= niceCols, clustering_distance_rows = 'minkowski', clustering_distance_cols = 'minkowski',
          cluster_method = 'mcquitty')
-pheatmap(sl[[3]], color= niceCols, clustering_distance_rows = 'manhattan', clustering_distance_cols = 'manhattan',
+pheatmap(sl[[3]], color= niceCols, clustering_distance_rows = 'minkowski', clustering_distance_cols = 'minkowski',
          cluster_method = 'median')
-pheatmap(sl[[3]], color= niceCols, clustering_distance_rows = 'manhattan', clustering_distance_cols = 'manhattan',
+pheatmap(sl[[3]], color= niceCols, clustering_distance_rows = 'minkowski', clustering_distance_cols = 'minkowski',
          cluster_method = 'centroid')
 ## results:
 # distance: minkowski > manhattan > max >= euclidean > canberra >> correlation >>> binary
 # method: ward > complete = average = single = mcquitty
-# so far best: mink+ward.D2 (really, all method similar), max+ward.D2, euclidean + ward.D, euclid (avg=single=mcq=median)
+# so far best: mink on both+ward.D2 (really, all method similar), max+ward.D2, euclidean + ward.D, euclid (avg=single=mcq=median)
+
 
 
 # try clustering on row-scaled or column-scaled data
@@ -595,10 +596,110 @@ pheatmap(sl[[3]], color= niceCols, clustering_distance_rows = 'minkowksi', clust
 # method: for all methods
 # so far best: none ; row is bad, column-scaling is slightly better but not as good as no scale
 
+## try different row-clust mixed with column by pearson? or euclidean?
+pheatmap(sl[[3]], color= niceCols, clustering_distance_rows = 'minkowski', clustering_distance_cols = 'correlation')
+
+pheatmap(sl[[3]], color= niceCols, clustering_distance_rows = 'minkowski', clustering_distance_cols = 'correlation', cluster_method = 'ward.D2')
+## results:
+# not that different from using same on rows and cols
 
 
-# try different row-clust mixed with column by pearson? or euclidean?
+## try kmeans argument to pheatmap
+library(dplyr)
+set.seed(123456)
+# save results of pheatmap to object p
+p <- pheatmap(sl[[3]], color= niceCols, clustering_distance_rows = 'minkowski', clustering_distance_cols = 'correlation', kmeans_k = 10)
+
+# extract results of kmeans
+k <- p$kmeans
+# save
+save(k, file = paste0(path,'a5-km.RDa'))
+
+# extract kmeans clusters
+c <- p$kmeans$cluster 
+# convert cluster and peak IDs to df
+cdf <- data.frame(peak = names(c), cluster = c, row.names= NULL) #[c]luster[d]ata[f]rame
+# convert sample 3 (n = 10000 peaks) to dataframe
+sl3df <- data.frame(peak = rownames(sl[[3]]), sl[[3]], row.names=NULL)
+# add clusterID onto df
+sl3dfc <- left_join(sl3df, cdf, by = 'peak') #sl3df[c]lusters
+
+# check that join worked properly by looking up rpm values in original sample matrix
+sl[[3]][rownames(sl[[3]])=='peak_5710',]
+sl[[3]][rownames(sl[[3]])=='peak_23145',]
+# save
+save(sl3dfc, file=paste0(path,'a5-sl3dfc.RDa'))
+
+# order df
+sl3dfco <- sl3dfc[order(sl3dfc$cluster),] # ordered
+# tried sub-ordering w/in single cluster, looks weird
+sl3dfco2 <- sl3dfc[order(sl3dfc$cluster,sl3dfc$Spl_wMus_Treg,sl3dfc$Spl_wVAT_Treg,
+                         sl3dfc$Spl_wCln_Nrp1n_Treg, sl3dfc$Spl_wCln_Nrp1p_Treg,
+                         sl3dfc$Vat_Treg, sl3dfc$Mus_Treg, sl3dfc$Cln_Nrp1n_Treg,
+                         sl3dfc$Cln_Nrp1p_Treg),]
+# save
+save(sl3dfco, file = paste0(path,'a5-sl3dfco.RDa'))
+
+# redraw heatmap based on kmeans
+pheatmap(as.matrix(sl3dfco2[2:9]), cluster_rows = F, color = niceCols)
+
+# try matplotting some clusters
+# convert peakIDs into rownames
+sl3dfc.rn <- data.frame(sl3dfc[-1], row.names=sl3dfc$peak)
+# re-order columns to put all t-treg together
+sl3dfc.rn <- sl3dfc.rn[c(9,1,2,3,8,4,5,6,7)]
+
+# extract cluster 1
+c1 <- as.matrix(sl3dfc.rn[2:9][sl3dfc$cluster ==1,], )
+c10 <- as.matrix(sl3dfc.rn[2:9][sl3dfc$cluster ==10,], )
+
+# plot clusters
+matplot(t(c10), type='l',xlab='cell type',ylab='log2 rpkm', xlim=c(1,8))
+
+# make cluster list
+cl <- list()
+for (i in 1:10) {
+  cl[[i]] <- as.matrix(sl3dfc.rn[2:9][sl3dfc$cluster == i,],)
+}
+
+# loop over to plot
+par(mfrow = c(2,5))
+for (i in 1:10) {
+  matplot(t(cl[[i]]),
+          type = 'l', col = niceCols[i],
+          xlab = 'Tissue Treg', ylab= 'log2 rpkm',
+          xlim=c(1,8),ylim=c(-2,12))
+}
+
+
+
+
+
+
+# convert back to matrix with rownames == clusterID 
+# cant with this code bc rownames not unique!!
+# how to get around?
+test <- data.matrix(sl3dfco[2:9, rownames.force = sl3dfco$cluster])
+
+
+# convert back to matrix with rownames == peakID? reason for this?
+
+k11 <- k$cluster[k$cluster == '11']
+
+test <- sl[[3]][k11,]
+pheatmap(test)
+
 ```
+<br>  
+
+#### Clustering on all peaks after removing outliers
+**Pseudo:**
++ define outliers (1.5*IQR?) 
++ go back to full peak list
++ loop definition over each column, create logical matrix with dim == dim(sl[[n]])
++ subset on logical == F
++ sample and combine samples into list as above
++ call new set 'slno' [s]ubset[l]ist[n]o[outliers]
 <br>  
 
 
@@ -619,12 +720,13 @@ eqSpect <- colorRampPalette(
                  "#8000D3", "#A001BF", "#BA00A4", "#D0007F"),
                  space="rgb",
                  interpolate="spline")
-n <- 12
+n <- 10
 
 niceCols <- eqSpect(n)
 
 # or 
-niceCols <- colorRampPalette(rev(brewer.pal(11, 'Spectral')))(50)
+niceCols <- colorRampPalette(rev(brewer.pal(10, 'Spectral')))(50)
+niceCols <- rev(brewer.pal(10, 'Spectral'))
 ```
 <br>  
 
