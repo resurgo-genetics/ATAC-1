@@ -603,9 +603,8 @@ pheatmap(sl[[3]], color= niceCols, clustering_distance_rows = 'minkowski', clust
 ## results:
 # not that different from using same on rows and cols
 
+##---- try kmeans function in pheatmap() --------------------------------------------------------------------
 
-## try kmeans argument to pheatmap
-library(dplyr)
 set.seed(123456)
 # save results of pheatmap to object p
 p <- pheatmap(sl[[3]], color= niceCols, clustering_distance_rows = 'minkowski', clustering_distance_cols = 'correlation', kmeans_k = 10)
@@ -618,11 +617,12 @@ save(k, file = paste0(path,'a5-km.RDa'))
 # extract kmeans clusters
 c <- p$kmeans$cluster 
 # convert cluster and peak IDs to df
-cdf <- data.frame(peak = names(c), cluster = c, row.names= NULL) #[c]luster[d]ata[f]rame
+cdf <- data.frame(peak = names(c), cluster = c, row.names= NULL) # [c]luster[d]ata[f]rame
 # convert sample 3 (n = 10000 peaks) to dataframe
-sl3df <- data.frame(peak = rownames(sl[[3]]), sl[[3]], row.names=NULL)
+sl3df <- data.frame(peak = rownames(sl[[3]]), sl[[3]], row.names=NULL) #[s]ample[l]ist[3][d]ata[frame]
 # add clusterID onto df
-sl3dfc <- left_join(sl3df, cdf, by = 'peak') #sl3df[c]lusters
+library(dplyr)
+sl3dfc <- left_join(sl3df, cdf, by = 'peak') # sl3df[c]lusters
 
 # check that join worked properly by looking up rpm values in original sample matrix
 sl[[3]][rownames(sl[[3]])=='peak_5710',]
@@ -631,12 +631,8 @@ sl[[3]][rownames(sl[[3]])=='peak_23145',]
 save(sl3dfc, file=paste0(path,'a5-sl3dfc.RDa'))
 
 # order df
-sl3dfco <- sl3dfc[order(sl3dfc$cluster),] # ordered
-# tried sub-ordering w/in single cluster, looks weird
-sl3dfco2 <- sl3dfc[order(sl3dfc$cluster,sl3dfc$Spl_wMus_Treg,sl3dfc$Spl_wVAT_Treg,
-                         sl3dfc$Spl_wCln_Nrp1n_Treg, sl3dfc$Spl_wCln_Nrp1p_Treg,
-                         sl3dfc$Vat_Treg, sl3dfc$Mus_Treg, sl3dfc$Cln_Nrp1n_Treg,
-                         sl3dfc$Cln_Nrp1p_Treg),]
+sl3dfco <- sl3dfc[order(sl3dfc$cluster),] # sl3dfc[o]rdered
+
 # save
 save(sl3dfco, file = paste0(path,'a5-sl3dfco.RDa'))
 
@@ -656,13 +652,13 @@ c10 <- as.matrix(sl3dfc.rn[2:9][sl3dfc$cluster ==10,], )
 # plot clusters
 matplot(t(c10), type='l',xlab='cell type',ylab='log2 rpkm', xlim=c(1,8))
 
-# make cluster list
-cl <- list()
+# extract each cluster and combine into a list
+cl <- list() # [c]luster [l]ist
 for (i in 1:10) {
   cl[[i]] <- as.matrix(sl3dfc.rn[2:9][sl3dfc$cluster == i,],)
 }
 
-# loop over to plot
+# loop over to plot each cluster
 par(mfrow = c(2,5))
 for (i in 1:10) {
   matplot(t(cl[[i]]),
@@ -672,9 +668,16 @@ for (i in 1:10) {
 }
 
 
+#### ------ in progress
+## have to combine clusters with peak coords
+# set path and filename
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/"
+filename <- 'a5-ttreg-rep-avg-annotated.bed.txt'
+# read in peak file with peakID
+ttreg <- read.delim(paste0(path,filename), header=T, check.names=T, sep='\t')
+# need to check that these match clustering
 
-
-
+....
 
 # convert back to matrix with rownames == clusterID 
 # cant with this code bc rownames not unique!!
@@ -764,6 +767,12 @@ plot(hc)
 # as an alternative, try Wards-linkage clustering
 hc.ward <- hclust(distDat, method = 'ward.D', members=NULL)
 plot(hc.ward)
+
+# tried sub-ordering w/in single cluster, looks weird
+sl3dfco2 <- sl3dfc[order(sl3dfc$cluster,sl3dfc$Spl_wMus_Treg,sl3dfc$Spl_wVAT_Treg,
+                         sl3dfc$Spl_wCln_Nrp1n_Treg, sl3dfc$Spl_wCln_Nrp1p_Treg,
+                         sl3dfc$Vat_Treg, sl3dfc$Mus_Treg, sl3dfc$Cln_Nrp1n_Treg,
+                         sl3dfc$Cln_Nrp1p_Treg),]
 ```
 
 
