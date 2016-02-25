@@ -362,7 +362,7 @@ library(preprocessCore)
 ttrm <- as.matrix(ttreg[,4:19]) # [t][t][r]eg[m]atrix
 
 # qn using preprocess core
-ttrqnmat <- normalize.quantiles(ttrm) #[t][t][r]eg[q]uantile[n]ormalized[mat]rix
+ttrqn.mat <- normalize.quantiles(ttrm) #[t][t][r]eg[q]uantile[n]ormalized[mat]rix
 
 # set file suffix
 suffix <- paste0('a5-ttreg-', n,'rpm-filtered-merged-counts-rpkm-qn')
@@ -378,6 +378,18 @@ boxplot(log(ttrqnmat,2), las = 2, cex.axis = 0.7,
         main=paste('merged atac peaks ','n=',nrow(ttreg),'; abline rpm=',h,sep=""))
 abline(h=h, col = 'red')
 dev.off()
+
+##--- export qn rpkm values -------------------------------------------------------------------------------
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/RDa/"
+suffix <- paste0('a5-ttreg-', n,'rpm-filtered-merged-counts-rpkm-qn-mat')
+save(ttrqnmat, file=paste0(path,suffix,'.RDa'))
+
+# as df with chrom info pasted on
+# add chrom coordinates info
+ttrqn.df <- cbind(ttreg[1:3],ttrqnmat)
+
+suffix <- paste0('a5-ttreg-', n,'rpm-filtered-merged-counts-rpkm-qn-df')
+save(ttrqn.df, file=paste0(path,suffix,'.RDa'))
 ```
 <br>  
 
@@ -385,45 +397,30 @@ dev.off()
 #### Generate read count matrix to use for clustering
 **Pseudo:**  
 + Take average of replicate values for each sample
-+ Plot distributions of read counts before and after averaging reps
++ Plot distributions of read counts after averaging reps
 + **Plot PCA after averaging reps** (TO DO)
 + Convert replicate averages to log2
 + Give each peak a unique ID
 + Export avg rpkm, log2rpkm of avgs 
+```{r count_mat}
+##---- load files ------------------------------------------------------------------------------------
+
+# load qn read count matrix and df
+n <- 2
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/RDa/"
+suffix <- paste0('a5-ttreg-', n,'rpm-filtered-merged-counts-rpkm-qn-mat')
+load(paste0(path,suffix,'.RDa'))
+
+# load qn read count df
+suffix <- paste0('a5-ttreg-', n,'rpm-filtered-merged-counts-rpkm-qn-df')
+load(paste0(path,suffix,'.RDa'))
 
 
-
-#### **Deprecated** Generate read count matrix to use for clustering 
-**Pseudo:**
-+ Plot distributions of read counts in the merged peak set for all samples before averaging replicates
-+ Take average of replicate values for each sample
-+ Plot distributions of read counts after averaging reps
-+ Convert replicate averages to log2
-+ Give each peak a unique ID
-+ Export avg rpkm, log2rpkm of avgs, 
-```{r count_matrix}
-##----plot read count distributions -------------------------------------------------------------
-
-# import peak file
-path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/"
-ttreg <- read.csv(file = paste(path,'a5-ttreg-consensus.rpkm.csv',sep=""), header =T)
-
-# compare read count distributions of raw data
-pdf(paste0(path,"a5-ttreg-merged-counts-rpkm.pdf"), width=8, height=6, pagecentre = T)
-par(oma = c(4,1,0.5,1))
-boxplot(log(ttreg[4:19],2), las = 2, cex.axis = 0.7, 
-        ylab='log2 rpkm', main='merged atac peaks, n=37756')
-dev.off()
-
-# try rotated view
-boxplot(log(ttreg[4:19],2), las = 2, cex.axis = 0.5, horizontal =T)
-
-##----avg replicates and log2 convert ----------------------------------------------------------------
-# take replicate averages and plot
+##----avg replicates  -------------------------------------------------------------------------------------
 library(dplyr)
 
 # compute replicate averages 
-ttregavg <- ttreg %>% # ttreg averages
+ttr.avg <- ttrqn.df %>% # ttreg averages
   transmute(mean1 = rowMeans(.[4:5]),
             mean2 = rowMeans(.[6:7]),
             mean3 = rowMeans(.[8:9]),
@@ -434,42 +431,68 @@ ttregavg <- ttreg %>% # ttreg averages
             mean8 = rowMeans(.[18:19]))
 
 # generate new column names
-samples <- names(ttreg[-c(1:3)])
+samples <- names(ttrqn.df[-c(1:3)])
 samples <- as.character(strsplit(samples, split = '_rep1.2'))
 samples <- as.character(strsplit(samples, split='_rep[1,2,3]'))
 samples <- unique(samples)
 
 # rename columns
-names(ttregavg) <- samples
+names(ttr.avg) <- samples
 
 # paste chr coordinates back on and add peak names and strand
-peakName <- paste('peak_', 1:nrow(ttregavg),sep="")
+peakName <- paste('peak_', 1:nrow(ttr.avg),sep="")
 strand <- '+'
-ttregavg <- cbind(ttreg[1:3],PeakID = peakName, Strand = strand, ttregavg)
+ttr.avg <- cbind(ttrqn.df[1:3],PeakID = peakName, Strand = strand, ttr.avg)
+
+# re-order to put all t-treg near each other, then all splenic
+ttr.avg <- ttr.avg[c(1:8,13,9:12)]
+
+##---- export -------------------------------------------------------------------------------------------------
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/RDa/" # set data path
+
+# raw values as RDa
+suffix <- paste0('a5-ttreg-', n,'rpm-filtered-rep-avg-counts-rpkm-qn')
+save(ttr.avg, file=paste0(path,suffix,'.RDa'))
+
+# raw values as .csv
+write.csv(ttr.avg, file=paste0(path,suffix,'.csv'), row.names=F) # as csv
+
+# as .bed
+write.table(ttr.avg[1:5],file=paste0(path,suffix,'.bed'), row.names=F, sep="\t",
+            col.names=c('#Chr','Start','End','PeakID','Strand'))
+
+
+##---- plot -------------------------------------------------------------------------------------------------
 
 # boxplot average read count distributions
-pdf(paste0(path,"a5-ttreg-rep-avg-counts-rpkm.pdf"), width=8, height=6, pagecentre = T)
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/plots/" # set plots path
+
+# plot
+suffix <- paste0('a5-ttreg-', n,'rpm-filtered-rep-avg-counts-rpkm-qn') # set file suffix
+pdf(paste0(path,suffix,'.pdf'), width=8,height=6, pagecentre = T)
 par(oma = c(4,1,0.5,1))
-boxplot(log(ttregavg[6:13],2), las = 2, cex.axis = 0.7, 
-        ylab='rep average log2rpkm', main='merged atac peaks, n=37756, replicate averages')
+boxplot(log(ttr.avg[6:13],2), las=2, cex.axis=0.7,
+        ylab='replicate avg log2rpkm',main=paste('merged atac peaks','n=',nrow(ttr.avg),sep=""))
 dev.off()
 
-# export df to file
-path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/"
-# as .csv
-write.csv(ttregavg, file=paste(path,'a5-ttreg-rep-avg-counts-rpkm.csv',sep=""), row.names=F) # as csv
-# as .bed
-write.table(ttregavg[1:5], file=paste(path,'a5-ttreg-rep-avg.bed',sep=""),row.names=F, 
-            sep='\t', col.names = c('#Chr','Start','End','PeakID','Strand'))
+##---- log2 convert and export --------------------------------------------------------------------------------
+ttr.avg.l2 <- ttr.avg #[t][tr]eg[a]verage[l]og[2]
 
-# log2 convert rpkm and export to file
-ttregavg[6:13] <- as.data.frame(lapply(ttregavg[6:13], log,2)) #ttreg[l]og2
-write.csv(ttregavg, file=paste(path,'a5-ttreg-rep-avg-counts-log2rpkm.csv',sep=""), row.names=F) # as csv
+ttr.avg.l2[6:13] <- as.data.frame(lapply(ttr.avg.l2[6:13], log,2))
+
+
+# export
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/csv/" # set data path
+suffix <- paste0('a5-ttreg-', n,'rpm-filtered-rep-avg-counts-log2-rpkm-qn')
+write.csv(ttr.avg.l2, file=paste0(path,suffix,'.csv'), row.names=F)
+
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/RDa/" # set data path
+save(ttr.avg.l2, file=paste0(path,suffix,'.RDa'))
 ```
-<br>  
+<br>
 
 
-#### Annotate peaks with closest gene and functional element, use as rownames dim in read count matrix
+#### Annotate peaks with closest gene and functional element, to use as rownames dim in read count matrix
 + on Orchestra, use HOMER `annotatepeaks.pl`
 <br>
 ```{r annotate_merged_matrix, engine = 'bash'}
@@ -477,48 +500,82 @@ write.csv(ttregavg, file=paste(path,'a5-ttreg-rep-avg-counts-log2rpkm.csv',sep="
 module load seq/homer/4.6
 
 # annotate
+# ran for 2p5 rpm-filtered
 annotatePeaks.pl a5-ttreg-rep-avg.bed mm9 > a5-ttreg-rep-avg.annotated.bed
+
+# ran this for 2rpm filtered
+a5-ttreg-2rpm-filtered-rep-avg-counts-rpkm-qn.txt mm9 > a5-ttreg-2rpm-filtered-rep-avg-qn-annotated.bed.txt
 ```
+
+
+#### For qn-rpm matrix of peak scores, append peakIDs and use as row names
++ (would like to use GeneName or Functional Element but rownames have to be unique) 
+```{r peakID_rownames}
+# set path and filename
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/bed/"
+filename <- 'a5-ttreg-2rpm-filtered-rep-avg-qn-annotated.bed.txt'
+# read in
+ttr.annot <- read.delim(paste0(path,filename), header=T, check.names=T, sep='\t')
+
+# load counts 
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/RDa/"
+filename <- 'a5-ttreg-2rpm-filtered-rep-avg-counts-log2-rpkm-qn.RDa'
+load(paste0(path,filename))
+
+##---- add Peak IDs as rownames --------------------------------------------------------------------------
+library(dplyr)
+
+# check length of annotation want to use as rowID
+length(ttr.annot$PeakID)
+
+# combine count df and annotation df
+ttr.avg.l2 <- ttr.avg.l2[-c(1:3)]
+ttrm <-  left_join(ttr.avg.l2, ttr.annot, by = 'PeakID') #[ttr]eg[m]atrix
+
+# combine gene name and rpm values
+ttrm <- cbind(PeakID = ttrm$PeakID, ttrm[grep(colnames(ttrm), pattern = '+_+')])
+
+# convert PeakIDs to row names
+rownames(ttrm) <- ttrm$PeakID
+
+# check
+head(attributes(ttrm)[[1]])
+
+# convert to matrix
+ttrm <- as.matrix(ttrm[-1])
+head(dimnames(ttrm)[[1]],5)
+
+
+##---- export -------------------------------------------------------------------------------------------------
+# as RDa
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/RDa/" # set data path
+n <- 2
+suffix <- paste0('a5-ttreg-', n,'rpm-filtered-rep-avg-counts-log2-rpkm-qn-peakID-mat')
+save(ttrm, file=paste0(path,suffix,'.RDa'))
+
+# as csv
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/csv/" # set data path
+write.csv(ttrm, file = paste0(path,suffix,'.csv'))
+```
+<br>  
 
 
 #### Take samples of peaks, compare sample distributions to population
 **Pseudo:**
-+ Use peakID as rownames (would like to use GeneName or Functional Element but rownames have to be unique) 
 + Take random samples of different sizes 
 + Plot distributions of read counts in samples vs distribution in population    
 
 **TO DO: figure out different scales on facets, and how to boxplot with var.width =T**
-```{r sample_clustering}
-# set path and filename
-path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/"
-filename <- 'a5-ttreg-rep-avg-annotated.bed.txt'
-# read in
-ttreg <- read.delim(paste0(path,filename), header=T, check.names=T, sep='\t')
-
-##---- add Peak IDs as rownames --------------------------------------------------------------------------
-# check length of annotation want to use as rowID
-length(ttreg$PeakID)
-
-# combine count df and annotation df
-ttregavg <- ttregavg[-c(1:3)]
-
-ttregm <-  left_join(ttregavg, ttreg, by = 'PeakID') #[tt]reg[m]atrix
-# combine gene name and rpm values
-ttregm <- cbind(PeakID = ttregm$PeakID, ttregm[grep(colnames(ttregm), pattern = '+_+')])
-# convert PeakIDs to row names
-rownames(ttregm) <- ttregm$PeakID
-# check
-head(attributes(ttregm)[[1]])
-# convert to matrix
-ttregm <- as.matrix(ttregm[-1])
-# save
-write.csv(ttregm, file = paste0(path,'a5-ttreg-rep-avg-counts-log2rpkm-mat.csv'))
-save(ttregm, file = paste0(path, 'a5-ttreg-rep-avg-counts-log2rpmk-mat.RDa'))
+```{r sample_peaks}
 
 ##---- sample peaks --------------------------------------------------------------------------------------
-# read in matrix of peak scores
-ttregm <- read.csv(file = paste0(path,'a5-ttreg-rep-avg-counts-log2rpkm-mat.csv'), row.names=1, header=T)
-ttregm <- as.matrix(ttregm)
+# read in df of peak scores
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/csv/" # set data path
+ttrm <- read.csv(file=paste0(path, 'a5-ttreg-2rpm-filtered-rep-avg-counts-log2-rpkm-qn-peakID-mat.csv'),
+                 row.names=1, header=T)
+# convert to matrix
+ttrm <- as.matrix(ttrm)
+head(dimnames(ttrm)[[1]],10)
 
 # vector of samples sizes
 sizes <- c(1000,5000,10000,15000,20000) # vector of sample sizes
@@ -526,8 +583,8 @@ sl <- list() #[s]ample [l]ist
 
 # generate sample matrices of different sizes, combine into list
 for(i in 1:length(sizes)) {
-  m <- matrix(nrow=1000,ncol=ncol(ttregm),data = 0)
-  m <- ttregm[sample(nrow(ttregm), size=sizes[i],replace=F),]
+  m <- matrix(nrow=1000,ncol=ncol(ttrm),data = 0)
+  m <- ttrm[sample(nrow(ttrm), size=sizes[i],replace=F),]
   sl[[i]] <- m
 }
 # check matrices are correct sizes
@@ -536,7 +593,11 @@ sapply(sl, dim)
 # name list elements
 names(sl) <- paste('npeaks_',sizes,sep="") 
 # save list to file
-save(sl, file = paste0(path,'a5-ttreg-peak-sample-list.RDa'))
+# as RDa
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/RDa/" # set data path
+n <- 2
+suffix <- paste0('a5-ttreg-', n,'rpm-filtered-qn-peak-sample-list')
+save(sl, file = paste0(path,suffix,'.RDa'))
 
 ##---- plot -----------------------------------------------------------------------------------------------
 # melt sample list to plot
@@ -547,7 +608,7 @@ names(msl) <- c('CellType','log2rpkm','PeakSample') # rename columns
 msl$PeakSample <- factor(msl$PeakSample, levels = unique(msl$PeakSample)) # convert peak sample ID to factor
 
 # melt original complete matrix to plot
-mpl <- melt(ttregm)[-1] # [m]elted[p]eak[l]ist
+mpl <- melt(ttrm)[-1] # [m]elted[p]eak[l]ist
 names(mpl) <- c('CellType','log2rpkm')
 mpl$PeakSample <- 'allpeaks'
 
@@ -559,22 +620,68 @@ g <- ggplot(mtl, aes(x=log2rpkm))
 g + geom_histogram(fill="white",color="black",binwidth=0.1) + 
   facet_grid(PeakSample ~.) +
   theme_bw()
+
 # save
-path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/"
-ggsave(file = paste(path,'a5-sample-pk-rpkm-hist.pdf'),width=8,height=7)
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/plots/" # set path for plots 
+n <- 2 # set filter value
+suffix <- paste0('a5-ttreg-', n,'rpm-filtered-sample-pk-rpkm-qn-hist') # file suffix
+ggsave(file = paste0(path,suffix,'.pdf'),width=8,height=7) # save
+ 
 
 # plot densities
 g <- ggplot(mtl, aes(x=log2rpkm))
 g + geom_density() + 
   facet_grid(PeakSample ~.) +
   theme_bw()
+
 # save
-path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/"
-ggsave(file = paste(path,'a5-sample-pk-rpkm-dens.pdf'),width=8,height=7)
+suffix <- paste0('a5-ttreg-', n,'rpm-filtered-sample-pk-rpkm-qn-dens') # file suffix
+ggsave(file = paste0(path,suffix,'.pdf'),width=8,height=7) # save
 ```
 <br>    
 
 
+#### Start by clustering random samples generated from **QN normalized** set of all strong peaks
+**Pseudo:**
++ hclust, different distance metrics     
+
+**TO DO:**
++ clustering on entire sample, saving clustered mat, only plotting every other or fourth in heat
++ how to do this? cluster rows? then columns? how to save results?
++ using pheatmap, how do I extract and re-plot the heatmap from hclust?
+```{r clust}
+# import peak samples
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/RDa/"
+filename <- 'a5-ttreg-2rpm-filtered-peak-sample-list.RDa'
+load(paste0(path,filename))
+
+# look over
+str(sl)
+names(sl)
+str(sl[[1]])
+head(sl[[1]])
+summary(sl[[3]])
+
+## for clustering, keep each peak sample matrix in list and refer to by list index
+
+##---- visualize on small sample -----------------------------------------------------------------------------
+# get nice colors
+library(RColorBrewer)
+
+# display spectra
+display.brewer.all()
+
+# set colors
+niceCols <- colorRampPalette(rev(brewer.pal(11, 'Spectral')))(50)
+
+# test default heatmap
+library(pheatmap)
+
+```
+
+
+
+**Purgatory** clustering from 2p5 rpm cutoff, non-QN-norm (may delete if 2rpm looks good)
 #### Start by clustering random samples generated from set of all strong peaks
 **Pseudo:**
 + hclust, different distance metrics     
@@ -584,8 +691,8 @@ ggsave(file = paste(path,'a5-sample-pk-rpkm-dens.pdf'),width=8,height=7)
 + how to do this? cluster rows? then columns? how to save results?
 ```{r clust}
 # import peak samples
-path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/"
-filename <- 'a5-ttreg-peak-sample-list.RDa'
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/RDa/"
+filename <- 'a5-ttreg-2rpm-filtered-peak-sample-list.RDa'
 load(paste0(path,filename))
 
 # look over
@@ -792,7 +899,7 @@ plot(as.matrix(sl3dfc.rn[,4]),as.matrix(sl3dfc.rn[,8]), col=niceCols[cl$cluster]
 points(cl$centers, col = niceCols[1:k], pch = 8, cex=2)
 
 
-##---- try kmediods from algorithm ------------------------------------------------------------------------
+##----a try kmediods from algorithm ------------------------------------------------------------------------
 library(cluster)
 set.seed(112358)
 k <- 10
@@ -804,6 +911,10 @@ plot(cl) # shows boundary and silhouette plots
 
 
 ##---- try APclustering  ----------------------------------------------------------------------------------
+library(apcluster)
+
+apRes <- apcluster(negDistMat(r=2), sl[[3]])
+
 
 ```
 <br>  
