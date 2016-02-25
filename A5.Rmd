@@ -629,6 +629,8 @@ sl[[3]][rownames(sl[[3]])=='peak_5710',]
 sl[[3]][rownames(sl[[3]])=='peak_23145',]
 # save
 save(sl3dfc, file=paste0(path,'a5-sl3dfc.RDa'))
+# load
+load(paste0(path,'a5-sl3dfc.RDa'))
 
 # order df
 sl3dfco <- sl3dfc[order(sl3dfc$cluster),] # sl3dfc[o]rdered
@@ -637,9 +639,14 @@ sl3dfco <- sl3dfc[order(sl3dfc$cluster),] # sl3dfc[o]rdered
 save(sl3dfco, file = paste0(path,'a5-sl3dfco.RDa'))
 
 # redraw heatmap based on kmeans
-pheatmap(as.matrix(sl3dfco2[2:9]), cluster_rows = F, color = niceCols)
+pdf(paste0(path,"a5-pheatmap-km-k10.pdf"), width=10, height=10)
+png(paste0(path,"a5-pheatmap-km-k10.png"), width=500, height=500)
+pheatmap(as.matrix(sl3dfco[2:9]), cluster_rows = F, color = niceCols)
+# save 
+dev.off()
 
-# try matplotting some clusters
+
+## try matplotting some km clusters
 # convert peakIDs into rownames
 sl3dfc.rn <- data.frame(sl3dfc[-1], row.names=sl3dfc$peak)
 # re-order columns to put all t-treg together
@@ -648,7 +655,6 @@ sl3dfc.rn <- sl3dfc.rn[c(9,1,2,3,8,4,5,6,7)]
 # extract cluster 1
 c1 <- as.matrix(sl3dfc.rn[2:9][sl3dfc$cluster ==1,], )
 c10 <- as.matrix(sl3dfc.rn[2:9][sl3dfc$cluster ==10,], )
-
 # plot clusters
 matplot(t(c10), type='l',xlab='cell type',ylab='log2 rpkm', xlim=c(1,8))
 
@@ -659,14 +665,16 @@ for (i in 1:10) {
 }
 
 # loop over to plot each cluster
+pdf(paste0(path,"a5-km-k10-matplots.pdf"), width=14, height=10)
+
 par(mfrow = c(2,5))
 for (i in 1:10) {
   matplot(t(cl[[i]]),
           type = 'l', col = niceCols[i],
           xlab = 'Tissue Treg', ylab= 'log2 rpkm',
-          xlim=c(1,8),ylim=c(-2,12))
+             xlim=c(1,8),ylim=c(-2,12))
 }
-
+dev.off()
 
 #### ------ in progress
 ## have to combine clusters with peak coords
@@ -685,12 +693,27 @@ ttreg <- read.delim(paste0(path,filename), header=T, check.names=T, sep='\t')
 test <- data.matrix(sl3dfco[2:9, rownames.force = sl3dfco$cluster])
 
 
-# convert back to matrix with rownames == peakID? reason for this?
+##---- try kmeans from algorithm ------------------------------------------------------------------------
+k <- 10
+cl <- kmeans(as.matrix(sl3dfc.rn[2:9]),k)
+niceCols <- brewer.pal(k, "Spectral")
+# can see that some clusters not nicely separated betwen vat and spleen
+plot(as.matrix(sl3dfc.rn[,4]),as.matrix(sl3dfc.rn[,8]), col=niceCols[cl$cluster]) 
+points(cl$centers, col = niceCols[1:k], pch = 8, cex=2)
 
-k11 <- k$cluster[k$cluster == '11']
 
-test <- sl[[3]][k11,]
-pheatmap(test)
+##---- try kmediods from algorithm ------------------------------------------------------------------------
+library(cluster)
+set.seed(112358)
+k <- 10
+cl <- pam(sl[[3]],k)
+# separation not much better than kmeans
+plot((sl[[3]][,3]),sl[[3]][,8], col=niceCols[cl$cluster], cex=0.4) 
+
+plot(cl) # shows boundary and silhouette plots
+
+
+##---- try APclustering  ----------------------------------------------------------------------------------
 
 ```
 <br>  
