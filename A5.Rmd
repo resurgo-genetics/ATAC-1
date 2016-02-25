@@ -76,7 +76,6 @@ path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEp
 lapply(names(pl_bed),
        function(x) write.table(pl_bed[x], file=paste(paste0(path,x),"bed",sep="."), sep = "\t", 
                               quote=F, row.names=F,col.names=c("#chr","start","end")))
-
 ```
 <br>    
 
@@ -122,6 +121,9 @@ write.csv(ppf, file = paste0(path,"peak_totals_rpm_filtered.csv"), row.names=F)
 print(xtable(ppf), type="html", include.rownames=F)
 
 # plot distributions of total peaks called at each cutoff
+library(reshape2)
+library(ggplot2)
+
 ppfm <- melt(ppf, id.vars='rpm_cutoff',variable.name='no_peaks') # ppf[m]elted 
 g <- ggplot(ppfm, aes(x=as.factor(rpm_cutoff),y=value))
 g + geom_boxplot() +
@@ -131,7 +133,7 @@ ggsave(paste0(path, "a5-peakcut-boxplot.pdf"), width=7, height=5) # export pdf
 <br>    
 
 
-#### Plot distribution of read counts for each sample
+#### Plot distribution of read counts for each sample and then filter by rpm 
 ```{r plots, eval=T}
 library(reshape2)
 library(ggplot2)
@@ -176,11 +178,9 @@ bp_nrpm <- function(df, n) {
     theme(axis.title.x = element_blank())
 }
 
-n <- 2.5 # set rpm cutoff
+n <- 2 # set rpm cutoff
 bp_nrpm(plmf, n) # draw plot
 ggsave(paste0(path,"a5-boxplot-",n,"rpm-filtered.pdf"), width =7, height =5) # export pdf
-# ggsave(paste0(path, "a4-boxplot-rpm-filtered.pdf"), width=5, height=4)
-
 
 # draw histograms of all peaks in each sample
 g <- ggplot(data = plmf, aes(x=log2_rpm))
@@ -198,24 +198,28 @@ ggsave(paste0(path, "a5-count-hist.pdf"), width=5, height=25)
 #### Filter for strong peaks
 ```{r filter_peaks, eval=T}
 library(dplyr)
-# select peaks >= 2.5rpm
-pl2p5 <- lapply(pl, filter, rpm >=2.5)
+# select peaks >= nrpm
+n <- 2
+sp <- lapply(pl, filter, rpm >=n) #[s]trong[p]eaks
 
 # export each df as .csv file
-path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/csv"
-lapply(names(pl2p5),
-       function(x) write.csv(pl2p5[[x]], file=paste(paste0(path,x),"2p5rpm","csv",sep="."), row.names=F))
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/csv/"
+suffix <- paste(n,'rpm','.csv',sep="")
+lapply(names(sp),
+       function(x) write.csv(sp[[x]], file=paste(path,x,'-',suffix,sep=""), row.names=F))
 
 # convert each df to bed format
-pl2p5bed <- lapply(pl2p5, function(x) {
+spbed <- lapply(sp, function(x) {
   x <- x[,c("seqnames","start","end")]
 })
 
 # export each df as tdt bed file
 path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/bed/"
-lapply(names(pl2p5bed ),
-       function(x) write.table(pl2p5bed[x], file=paste(paste0(path,x),"2p5rpm","bed",sep="."), sep = "\t", 
-                              quote=F, row.names=F,col.names=c("#chr","start","end")))
+
+suffix <- paste(n, 'rpm','.bed',sep="")
+lapply(names(spbed),
+       function(x) write.table(spbed[x], file=paste(path,x,'-',suffix,sep=""), sep = "\t",
+                               quote=F, row.names=F,col.names=c("#chr","start","end")))
 ```
 <br>    
 
