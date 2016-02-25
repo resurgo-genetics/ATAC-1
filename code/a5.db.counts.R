@@ -3,7 +3,7 @@
 
 library(DiffBind)
 
-# create sample sheet
+##----- create sample sheet --------------------------------------------------------------------------------
 path <- "/groups/cbdm-db/jrd26/ATAC_crossbatch/R/Analysis5/"
 
 Peaks <- list.files(paste0(path, "bed/2rpm-filtered/"))
@@ -42,13 +42,14 @@ write.csv(samples, "samples.csv", row.names=F)
 ttreg <- dba(sampleSheet = "samples.csv", bRemoveRandom = T, minOverlap = 2)
 
 # make consensus peakset from replicates
-ttreg <- dba.peakset(ttreg, consensus = -DBA_REPLICATE)
+ttreg <- dba.peakset(ttreg, consensus = DBA_FACTOR)
 
 # make consensus peakset from samples and count reads
 ttreg <- dba.count(ttreg, peaks = ttreg$masks$Consensus, score = DBA_SCORE_RPKM)
 
 # save dba to file
-dba.save(ttreg, file="ttreg", dir=path, pre="dba_", ext="RData", bMinimize=F)
+n <- 2  # save rpm filter value
+dba.save(ttreg, file=paste0("a5-ttreg",n,'rpm-filtered'), dir=path, pre="dba_", ext="RData", bMinimize=F)
 
 # export consensus peakset with read counts
 # set filter
@@ -60,8 +61,15 @@ ttreg_con <- dba.peakset(ttreg, ttreg$masks$Consensus, bRetrieve = T,
 write.csv(ttreg_con, file=paste0(path, suffix, '.csv'), row.names=F)
 
 # save read count correlation heatmap
-suffix <- paste('a5-ttreg-',n,'rpm-reads-heat')
+suffix <- paste('a5-ttreg-',n,'rpm-reads-heat',sep="")
 pdf(paste0(path,suffix,'.pdf'), width=10, height=10, pagecentre = T)
 par(oma = c(3,2,2,3))
 dba.plotHeatmap(ttreg)
+dev.off()
+
+# save read count PCA
+suffix <- paste('a5-ttreg-',n,'rpm-pca',sep="")
+pdf(paste0(path,suffix,'.pdf'), width=10, height=10, pagecentre = T)
+par(oma = c(3,2,2,3))
+dba.plotPCA(ttreg, attributes=DBA_TISSUE, label=DBA_FACTOR, score=DBA_SCORE_RPKM)
 dev.off()
