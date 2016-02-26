@@ -26,6 +26,7 @@ Github
 https://github.com/jdis24/ATAC.git
 <br>    
 
+
 #### Pseudo
 **call peaks and get read counts**
 + [these steps were done in "ATAC_peaks.Rmd"]
@@ -48,6 +49,7 @@ https://github.com/jdis24/ATAC.git
 + start with hclust on random sample of peaks - sample size? 
 ++ can I use hc results as initial centroids for Kmeans?
 <br>    
+
 
 #### Import peak files into peak list and export bed files
 ```{r peak_list, eval=T}
@@ -641,16 +643,18 @@ ggsave(file = paste0(path,suffix,'.pdf'),width=8,height=7) # save
 <br>    
 
 
-#### Start by clustering random samples generated from **QN normalized** set of all strong peaks
-**Pseudo:**
-+ hclust, different distance metrics     
-
+#### Clustering TO DO
 **TO DO:**
 + clustering on entire sample, saving clustered mat, only plotting every other or fourth in heat
 + how to do this? cluster rows? then columns? how to save results?
 + using pheatmap, how do I extract and re-plot the heatmap from hclust?
-```{r clust}
-# import peak samples
++ can I get a trendline on the matplots? using ggplot2?
++ can I dim reduce the results of APcluster to help evaluation?
+<br>
+
+#### Hclust on random samples generated from **QN normalized** set of all strong peaks
+```{r hclust}
+# load list of peak sample matrices
 path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/RDa/"
 filename <- 'a5-ttreg-2rpm-filtered-peak-sample-list.RDa'
 load(paste0(path,filename))
@@ -678,6 +682,191 @@ niceCols <- colorRampPalette(rev(brewer.pal(11, 'Spectral')))(50)
 library(pheatmap)
 
 ```
+<br>
+
+
+#### Km + Hclust on random samples generated from **QN normalized** set of all strong peaks
++ try iterating Km in a while loop until get lowest total SSE?
+<br>  
+
+
+#### APclust on random samples generated from **QN normalized** set of all strong peaks
+**Pseudo**
++ sample n=10K peaks
++ get input preference range: preferenceRange(negDistMat(r=2)(x))
++ apclusterL(negDistMat(r=2), x, p=-2, q=0, frac=0.1, sweeps=3) 
++ eval total number of K and its associated p
++ if necessary, re-run with smaller p to decrease K
+
++ visualize cluster solution on two columns of data: plot(apres, x[, c(1,2)])
++ visalize as scatterplot matrix: plot(apres, x)
++ how large can dim before before crash plotting device?
++ visualize using some other dim reduction solution? e.g. SVD, PCA, tsne?
++ visualize as heatmap: heatmap(apres)
++ how many K can you have on cluster corr heatmap and still see clear structure?
+
++ to improve cluster separation, increase sweeps first then frac bc frac is memory suck
+
++ combine clusters: aggExCluster(x=apres) --> plot (aggres1) to see dendro --> cutree(aggres1, 4) --> heatmap and scatter
++ check variant of aggExCluster call in youtube video chrom22 proms
+
++ attach clusterIDs to peaks in original df, heatmap, hc on columns/samples, sort by rows
+<br>
+```{r apclust}
+library(apcluster)
+
+##---- load peak samples -------------------------------------------------------------------------------------------
+
+# load list of peak sample matrices
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/RDa/"
+filename <- 'a5-ttreg-2rpm-filtered-qn-peak-sample-list.RDa'
+load(paste0(path,filename))
+
+# look over
+str(sl)
+names(sl)
+str(sl[[1]])
+head(sl[[1]])
+summary(sl[[3]])
+
+# extract sample of 10K peaks
+p10k <- sl[[3]]
+str(p10k)
+head(p10k)
+
+##---- APcluster ------------------------------------------------------------------------------------------------
+
+# find range of input prefs
+preferenceRange(negDistMat(r=2)(p10k))
+
+# use p = -0.001
+
+# apply leveraged AP
+ap1 <- apclusterL(negDistMat(r=2), p10k, p=-2, frac = 0.1, sweeps = 3)
+# 889
+
+ap1 <- apclusterL(negDistMat(r=2), p10k, p=-20, frac = 0.1, sweeps = 3)
+# 214
+
+ap1 <- apclusterL(negDistMat(r=2), p10k, p=-200, frac = 0.1, sweeps = 3)
+# 37
+
+ap1 <- apclusterL(negDistMat(r=2), p10k, p=-300, frac = 0.1, sweeps = 3)
+# 29
+
+ap1 <- apclusterL(negDistMat(r=2), p10k, p=-500, frac = 0.1, sweeps = 3)
+# 19
+
+ap1 <- apclusterL(negDistMat(r=2), p10k, p=-700, frac = 0.1, sweeps = 3)
+# 15 
+
+ap1 <- apclusterL(negDistMat(r=2), p10k, p=-700, frac = 0.1, sweeps = 5)
+# 16 
+
+# plot
+plot(ap1, p10k)
+heatmap(ap1)
+
+##---- append clusterID to peak signal values --------------------------------------------------------------------
+
+# append clustID to peaks
+cl <- ap1@clusters # extract AP clusters # [c]luster[l]ist
+names(cl) <- c(1:length(cl))
+
+pdfc <- data.frame() #[p]eak[d]ata[f]rame[c]lusters
+
+for (i in 1:length(cl)) { # loop over cluster list and append clusterID to peak
+  df <- data.frame(PeakID = names(clt[[i]]), ClusterID = names(clt[i]))
+  pdfc <- rbind(pdfc, df)
+}
+
+# convert sample 3 (n = 10000 peaks) to dataframe
+pdf <- data.frame(PeakID = rownames(p10k), p10k, row.names=NULL)  # [p]eak[d]ata[f]rame
+
+# add clusterID onto df
+library(dplyr)
+pdfc <- left_join(pdfc, pdf, by = 'PeakID') 
+
+# check
+summary(pdfc$ClusterID)
+p10k[rownames(p10k)=='peak_43155',]
+pdfc[pdfc$PeakID=='peak_43155',]
+
+# order
+pdfco <- pdfc[order(pdfc$ClusterID),]
+
+# save ordered df
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/RDa/"
+save(pdfco, file = paste0(path,'a5-qn-pdfco.RDa'))
+
+
+##---- heatmap results across samples ----------------------------------------------------------------------------
+
+# redraw sample/peak heatmap based on cluster results
+#pdf(paste0(path,"a5-pheatmap-qn-apclust-16.pdf"), width=10, height=10)
+library(pheatmap)
+library(RColorBrewer)
+
+niceCols <- colorRampPalette(rev(brewer.pal(10, 'Spectral')))(50) # set colors
+niceCols <- rev(brewer.pal(10, 'Spectral')) # try different
+
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/plots/"
+png(paste0(path,"a5-pheatmap-qn-apclust-16.png"), width=500, height=500)
+pheatmap(as.matrix(pdfco[3:10]), cluster_rows = F, color = niceCols)
+dev.off()
+
+## plot each cluster different color, intensity/alpha = signal
+## ggplot?
+
+
+##---- matplots results across samples -------------------------------------------------------------------------
+
+# extract each cluster and combine into a list
+cl <- list() # [c]luster [l]ist
+for (i in 1:length(unique(pdfco$ClusterID))) {
+  cl[[i]] <- as.matrix(pdfco[3:10][pdfco$ClusterID == i,],)
+}
+
+# loop over to plot each cluster
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/plots/"
+pdf(paste0(path,"a5-qn-apclust-16-matplots.pdf"), width=15, height=15)
+
+# set rows and columns
+par(mfrow = c(4,4))
+
+# set colors
+eqSpect <- colorRampPalette(
+               c("#f2003c", "#F66900", "#F19100", "#F1B100",
+                 "#EFD300", "#f0ea00", "#CBDB00", "#9DD501",
+                 "#5ED108", "#00AF63", "#00A78E", "#00a3ac",
+                 "#0093af", "#0082b2", "#006ebf", "#4F37C2",
+                 "#8000D3", "#A001BF", "#BA00A4", "#D0007F"),
+                 space="rgb",
+                 interpolate="spline")
+n <- length(unique(pdfco$ClusterID))
+
+niceCols <- eqSpect(n)
+
+for (i in 1:length(unique(pdfco$ClusterID))) {
+  matplot(t(cl[[i]]),
+          type = 'l', col = niceCols[i],
+          xlab = 'Tissue Treg', ylab= 'log2 rpkm',
+             xlim=c(1,8),ylim=c(-2,12))
+}
+dev.off()
+
+############# can I do matplots in ggplot and add trendline? write function for it then apply?
+
+
+## ---- tsne results of APclust OR other dim reduction ?? ------------------------------------------------------
+
+```
+<br>    
+
+
+
+
+
 
 
 
