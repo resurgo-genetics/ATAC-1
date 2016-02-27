@@ -135,7 +135,7 @@ ggsave(paste0(path, "a5-peakcut-boxplot.pdf"), width=7, height=5) # export pdf
 <br>    
 
 
-#### Plot distribution of read counts for each sample and then filter by rpm 
+#### Plot distribution of read counts for each sample 
 ```{r plots, eval=T}
 library(reshape2)
 library(ggplot2)
@@ -396,7 +396,7 @@ save(ttrqn.df, file=paste0(path,suffix,'.RDa'))
 <br>  
 
 
-#### Generate read count matrix to use for clustering
+#### Average repliate values and generate read count matrix to use for clustering
 **Pseudo:**  
 + Take average of replicate values for each sample
 + Plot distributions of read counts after averaging reps
@@ -508,6 +508,7 @@ annotatePeaks.pl a5-ttreg-rep-avg.bed mm9 > a5-ttreg-rep-avg.annotated.bed
 # ran this for 2rpm filtered
 a5-ttreg-2rpm-filtered-rep-avg-counts-rpkm-qn.txt mm9 > a5-ttreg-2rpm-filtered-rep-avg-qn-annotated.bed.txt
 ```
+<br>  
 
 
 #### For qn-rpm matrix of peak scores, append peakIDs and use as row names
@@ -644,7 +645,6 @@ ggsave(file = paste0(path,suffix,'.pdf'),width=8,height=7) # save
 
 
 #### Clustering TO DO
-**TO DO:**
 + clustering on entire sample, saving clustered mat, only plotting every other or fourth in heat
 + how to do this? cluster rows? then columns? how to save results?
 + using pheatmap, how do I extract and re-plot the heatmap from hclust?
@@ -652,7 +652,8 @@ ggsave(file = paste0(path,suffix,'.pdf'),width=8,height=7) # save
 + can I dim reduce the results of APcluster to help evaluation?
 <br>
 
-#### Hclust on random samples generated from **QN normalized** set of all strong peaks
+
+#### HOLD -- Hclust on random samples generated from **QN normalized** set of all strong peaks
 ```{r hclust}
 # load list of peak sample matrices
 path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/RDa/"
@@ -685,7 +686,7 @@ library(pheatmap)
 <br>
 
 
-#### Km + Hclust on random samples generated from **QN normalized** set of all strong peaks
+#### HOLD -- Km + Hclust on random samples generated from **QN normalized** set of all strong peaks
 + try iterating Km in a while loop until get lowest total SSE?
 <br>  
 
@@ -743,7 +744,7 @@ preferenceRange(negDistMat(r=2)(p10k))
 
 # apply leveraged AP
 ap1 <- apclusterL(negDistMat(r=2), p10k, p=-2, frac = 0.1, sweeps = 3)
-# 889
+# result = 889 clusters
 
 ap1 <- apclusterL(negDistMat(r=2), p10k, p=-20, frac = 0.1, sweeps = 3)
 # 214
@@ -798,9 +799,10 @@ pdfco <- pdfc[order(pdfc$ClusterID),]
 # save ordered df
 path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/RDa/"
 save(pdfco, file = paste0(path,'a5-qn-pdfco.RDa'))
+# to reload
+load(paste0(path,'a5-qn-pdfco.RDa'))
 
-
-##---- heatmap results across samples ----------------------------------------------------------------------------
+##---- pheatmap results across samples ----------------------------------------------------------------------------
 
 # redraw sample/peak heatmap based on cluster results
 #pdf(paste0(path,"a5-pheatmap-qn-apclust-16.pdf"), width=10, height=10)
@@ -815,8 +817,49 @@ png(paste0(path,"a5-pheatmap-qn-apclust-16.png"), width=500, height=500)
 pheatmap(as.matrix(pdfco[3:10]), cluster_rows = F, color = niceCols)
 dev.off()
 
-## plot each cluster different color, intensity/alpha = signal
-## ggplot?
+## ---- ggplot heatmap on sample ----------------------------------------------------------------------------
+## -- this works -- ##
+library(reshape2)
+library(ggplot2)
+# start with copy of pdfco 
+str(pdfco)
+x <- pdfco[c(3:10,1,2)]
+str(x)
+x <- x[x$ClusterID == c(1:4),c(1,3,4,5,9,10)]
+str(x)
+
+# sort peaks by cluster
+x$peaksort <- x$PeakID[order(x$ClusterID)]
+str(x)
+x$peaksort <- order(x$ClusterID, rowMeans(x[1:4]))
+head(x)
+
+# melt
+xm <- melt(x, id.vars=c('PeakID','peaksort'))
+xm$value <- as.numeric(xm$value)
+
+# plot
+ggplot(xm, aes(x=variable, y=peaksort)) + geom_tile(aes(fill=value)) +
+scale_fill_gradientn(colors = myPalette(100))
+
+### ----  can't make cluster bar at end have separate colors from value scale
+xm[[3]] <- gsub(xm[[3]], pattern = 'ClusterID', replacement = 'Z')
+ggplot(xm[xm$variable!='ClusterID',], aes(x=variable, y=peaksort)) + geom_tile(aes(fill=value)) +
+  scale_fill_gradientn(colors = myPalette(100)) + 
+  geom_tile(data = xm[xm$variable =='ClusterID',], aes(x=variable,y=peaksort,color=value)) + 
+  scale_color_brewer(palette="Dark2")
+
+## can't get each cluster to be different color and map intensity to rpkm
+# this almost works
+xm <- melt(x, id.vars=c('PeakID','peaksort','ClusterID'), measure.vars=names(x[c(1:4,6)]))
+xm$value <- as.numeric(xm$value)
+ggplot(xm, aes(x=variable, y=peaksort, color=ClusterID)) + geom_tile(aes(fill=value)) +
+  theme_bw()
+# this could work with some tweaking
+ggplot(xm, aes(x=variable, y=peaksort)) + geom_tile(aes(fill=ClusterID, alpha=value)) + 
+  scale_fill_brewer(palette='Spectral') + 
+  scale_alpha_continuous(range=c(0.001,1)) +
+  theme_bw()
 
 
 ##---- matplots results across samples -------------------------------------------------------------------------
@@ -826,13 +869,6 @@ cl <- list() # [c]luster [l]ist
 for (i in 1:length(unique(pdfco$ClusterID))) {
   cl[[i]] <- as.matrix(pdfco[3:10][pdfco$ClusterID == i,],)
 }
-
-# loop over to plot each cluster
-path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/plots/"
-pdf(paste0(path,"a5-qn-apclust-16-matplots.pdf"), width=15, height=15)
-
-# set rows and columns
-par(mfrow = c(4,4))
 
 # set colors
 eqSpect <- colorRampPalette(
@@ -847,15 +883,58 @@ n <- length(unique(pdfco$ClusterID))
 
 niceCols <- eqSpect(n)
 
-for (i in 1:length(unique(pdfco$ClusterID))) {
-  matplot(t(cl[[i]]),
+
+# define function to draw matplot for each cluster with mean trendline
+matplusmean <- function(x) {
+  # x = list of peak matrices
+  # draw matploots
+  matplot(t(x[[i]]),
           type = 'l', col = niceCols[i],
           xlab = 'Tissue Treg', ylab= 'log2 rpkm',
-             xlim=c(1,8),ylim=c(-2,12))
+             xlim=c(1,8),ylim=c(-2,9))
+  # draw trendline
+  points(x = seq(1,8,by=1), y=colMeans(cl[[i]]),lwd=4, col='black',type='l')
 }
+
+# set path and device
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/plots/"
+pdf(paste0(path,"a5-qn-apclust-16-matplots-mean-trend.pdf"), width=15, height=15)
+
+# set rows and columns
+par(mfrow = c(4,4))
+# run
+for (i in 1:length(unique(pdfco$ClusterID))) {
+  matplusmean(cl)
+}
+# save
 dev.off()
 
-############# can I do matplots in ggplot and add trendline? write function for it then apply?
+
+# define function to draw matplot for each cluster with median trendline
+matplusmeds <- function(x) {
+  # x = list of peak matrices
+  matplot(t(x[[i]]),
+          type = 'l', col = niceCols[i],
+          xlab = 'Tissue Treg', ylab= 'log2 rpkm',
+             xlim=c(1,8),ylim=c(-2,9))
+  # find median
+  med <- apply(x[[i]],2,median)
+  # add trendline
+  points(x = seq(1,8,by=1), y=med,lwd=4, col='black',type='l')
+}
+
+# set path and device
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/plots/"
+pdf(paste0(path,"a5-qn-apclust-16-matplots-med-trend.pdf"), width=15, height=15)
+
+# set rows and columns
+par(mfrow = c(4,4))
+# run
+for (i in 1:length(unique(pdfco$ClusterID))) {
+  matplusmeds(cl)
+}
+# save
+dev.off()
 
 
 ## ---- tsne results of APclust OR other dim reduction ?? ------------------------------------------------------
@@ -870,7 +949,7 @@ dev.off()
 
 
 
-**Purgatory** clustering from 2p5 rpm cutoff, non-QN-norm (may delete if 2rpm looks good)
+#### **Purgatory** clustering from 2p5 rpm cutoff, non-QN-norm (may delete if 2rpm looks good)
 #### Start by clustering random samples generated from set of all strong peaks
 **Pseudo:**
 + hclust, different distance metrics     
@@ -1136,13 +1215,13 @@ eqSpect <- colorRampPalette(
                  "#8000D3", "#A001BF", "#BA00A4", "#D0007F"),
                  space="rgb",
                  interpolate="spline")
-n <- 10
+n <- 16
 
 niceCols <- eqSpect(n)
 
 # or 
 niceCols <- colorRampPalette(rev(brewer.pal(10, 'Spectral')))(50)
-niceCols <- rev(brewer.pal(10, 'Spectral'))
+niceCols <- rev(brewer.pal(11, 'Spectral'))
 ```
 <br>  
 
