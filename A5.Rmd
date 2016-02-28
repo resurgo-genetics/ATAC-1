@@ -402,7 +402,7 @@ save(ttrqn.df, file=paste0(path,suffix,'.RDa'))
 + Plot distributions of read counts after averaging reps
 + **Plot PCA after averaging reps** (TO DO)
 + Convert replicate averages to log2
-+ Give each peak a unique ID
++ **Give each peak a unique ID**
 + Export avg rpkm, log2rpkm of avgs 
 ```{r count_mat}
 ##---- load files ------------------------------------------------------------------------------------
@@ -649,15 +649,6 @@ ggsave(file = paste0(path,suffix,'.pdf'),width=8,height=7) # save
 <br>    
 
 
-#### Clustering TO DO
-+ clustering on entire sample, saving clustered mat, only plotting every other or fourth in heat
-+ how to do this? cluster rows? then columns? how to save results?
-+ using pheatmap, how do I extract and re-plot the heatmap from hclust?
-+ can I get a trendline on the matplots? using ggplot2?
-+ can I dim reduce the results of APcluster to help evaluation?
-<br>
-
-
 #### Divide peaks into similar and variable subsets
 ```{r find_var_peaks}
 # read in df of peak scores
@@ -709,6 +700,35 @@ file <- 'a5-ttreg-2rpm-fc2-fail'
 save(ttrm.fc2.fail, file = paste0(path,file,'.RDa'))
 # load 
 load(file = paste(path,file,'.RDa',sep=""))
+```
+<br>  
+
+
+#### Clustering TO DO
++ clustering on entire sample, saving clustered mat, only plotting every other or fourth in heat
++ how to do this? cluster rows? then columns? how to save results?
++ using pheatmap, how do I extract and re-plot the heatmap from hclust?
++ can I dim reduce the results of APcluster to help evaluation?
+<br>
+
+
+#### Finding best heatmap colors for clusters
+```{r colors}
+eqSpect <- colorRampPalette(
+               c("#f2003c", "#F66900", "#F19100", "#F1B100",
+                 "#EFD300", "#f0ea00", "#CBDB00", "#9DD501",
+                 "#5ED108", "#00AF63", "#00A78E", "#00a3ac",
+                 "#0093af", "#0082b2", "#006ebf", "#4F37C2",
+                 "#8000D3", "#A001BF", "#BA00A4", "#D0007F"),
+                 space="rgb",
+                 interpolate="spline")
+n <- 16
+
+niceCols <- eqSpect(n)
+
+# or 
+niceCols <- colorRampPalette(rev(brewer.pal(10, 'Spectral')))(50)
+niceCols <- rev(brewer.pal(11, 'Spectral'))
 ```
 <br>  
 
@@ -1032,7 +1052,7 @@ matplusmean <- function(x) {
   matplot(t(x[[i]]),
           type = 'l', col = niceCols[i],
           xlab = 'Tissue Treg', ylab= 'log2 rpkm',
-             xlim=c(1,8),ylim=c(-2,9), xaxt='n')
+             xlim=c(1,8),ylim=c(-2,7), xaxt='n')
   # label x axis
   axis(1, at=1:8, labels=c('Cn','Cp','M','V','SCn','SCp','SM','SV'))
   # draw trendline
@@ -1059,7 +1079,7 @@ matplusmeds <- function(x) {
   matplot(t(x[[i]]),
           type = 'l', col = niceCols[i],
           xlab = 'Tissue Treg', ylab= 'log2 rpkm',
-             xlim=c(1,8),ylim=c(-2,9),xaxt='n')
+             xlim=c(1,8),ylim=c(-2,7),xaxt='n')
   # find median
   med <- apply(x[[i]],2,median)
   # label x axis
@@ -1080,6 +1100,56 @@ for (i in 1:length(unique(pdfco$ClusterID))) {
 }
 # save
 dev.off()
+
+
+## ---- retrieve peak coordinates and export --------------------------------------------------------------------
+# load df with peakID and cluster info
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/RDa/"
+load(paste0(path,'a5-qn-fc2-pass-apclust-9-pdfco.RDa'))
+
+# load df with peakID and chrom coords
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/bed/"
+filename <- 'a5-ttreg-2rpm-filtered-rep-avg-qn-annotated.bed.txt'
+# read in
+ttr.annot <- read.delim(paste0(path,filename), header=T, check.names=T, sep='\t')
+
+# check agreements
+pdfco[pdfco$PeakID == 'peak_61',]
+ttr.annot[ttr.annot$PeakID == 'peak_61',]
+
+# merge 
+library(dplyr)
+
+pdfco.annot <- left_join(pdfco, ttr.annot, by = 'PeakID')
+pdfco.annot <- pdfco.annot[c(1:13,17:26)]
+
+# save
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/RDa/"
+file <- 'a5-ttreg-2rpm-filtered-qn-fc2-pass-apk9-peak-df-annot'
+save(pdfco.annot, file = paste0(path,file,'.RDa'))
+
+# generate bed format with ClusterID
+pdfco.bed <- pdfco.annot[c(11:13,1,2)]
+
+# generate list of peak df split by ClusterID
+pl <- list() # [p]eak[l]ist
+for (i in 1:length(unique(pdfco.bed$ClusterID))) {
+  pl[[i]] <- pdfco.bed[pdfco.bed$ClusterID == i,]
+}
+
+# name list elements
+pl.names <- 'a5-ttreg-2rpm-fil-qn-fc2-pass-apclust'
+pl.names1 <- seq(from = 1,to = length(unique(pdfco.bed$ClusterID)), by = 1)
+pl.names2 <- paste(test,test1,sep="")
+
+# name the list elements to match the files
+names(pl) <- pl.names2
+
+# write each df to bed file
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/bed/"
+lapply(names(pl),
+       function(x) write.table(pl[[x]][-5], file=paste(paste0(path,x),'bed','txt',sep="."), sep = '\t',
+                               quote=F, row.names=F, col.names=c('#Chr','Start','End','PeakID')))
 ```
 <br>  
 
@@ -1210,46 +1280,6 @@ pheatmap(as.matrix(heat.df[3:10]), cluster_rows = F, color = niceCols, annotatio
 dev.off()
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# redraw sample/peak heatmap based on cluster results
-#pdf(paste0(path,"a5-pheatmap-qn-apclust-16.pdf"), width=10, height=10)
-library(pheatmap)
-library(RColorBrewer)
-
-#niceCols <- colorRampPalette(rev(brewer.pal(10, 'Spectral')))(50) # set colors
-niceCols <- rev(brewer.pal(10, 'Spectral')) # try different
-
-path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/plots/"
-png(paste0(path,"a5-pheatp-qn-apclust-fc2-fail-k5.png"), width=500, height=500)
-pheatmap(as.matrix(pdfco[3:10]), cluster_rows = F, color = niceCols)
-dev.off()
-
 ## ---- ggplot heatmap across samples --------------------------------------------------------------------------
 library(reshape2)
 library(ggplot2)
@@ -1358,6 +1388,56 @@ for (i in 1:length(unique(pdfco$ClusterID))) {
 }
 # save
 dev.off()
+
+
+## ---- retrieve peak coordinates and export --------------------------------------------------------------------
+# load df with peakID and cluster info
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/RDa/"
+load(paste0(path,'a5-qn-fc2-fail-apclust-5-pdfco.RDa'))
+
+# load df with peakID and chrom coords
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/bed/"
+filename <- 'a5-ttreg-2rpm-filtered-rep-avg-qn-annotated.bed.txt'
+# read in
+ttr.annot <- read.delim(paste0(path,filename), header=T, check.names=T, sep='\t')
+
+# check agreements
+pdfco[pdfco$PeakID == 'peak_3',]
+ttr.annot[ttr.annot$PeakID == 'peak_3',]
+
+# merge 
+library(dplyr)
+
+pdfco.annot <- left_join(pdfco, ttr.annot, by = 'PeakID')
+pdfco.annot <- pdfco.annot[c(1:13,17:26)]
+
+# save
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/RDa/"
+file <- 'a5-ttreg-2rpm-filtered-qn-fc2-fail-apk5-peak-df-annot'
+save(pdfco.annot, file = paste0(path,file,'.RDa'))
+
+# generate bed format with ClusterID
+pdfco.bed <- pdfco.annot[c(11:13,1,2)]
+
+# generate list of peak df split by ClusterID
+pl <- list() # [p]eak[l]ist
+for (i in 1:length(unique(pdfco.bed$ClusterID))) {
+  pl[[i]] <- pdfco.bed[pdfco.bed$ClusterID == i,]
+}
+
+# name list elements
+pl.names <- 'a5-ttreg-2rpm-fil-qn-fc2-fail-apclust'
+pl.names1 <- seq(from = 1,to = length(unique(pdfco.bed$ClusterID)), by = 1)
+pl.names2 <- paste(pl.names,pl.names1,sep="")
+
+# name the list elements to match the files
+names(pl) <- pl.names2
+
+# write each df to bed file
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/bed/"
+lapply(names(pl),
+       function(x) write.table(pl[[x]][-5], file=paste(paste0(path,x),'bed','txt',sep="."), sep = '\t',
+                               quote=F, row.names=F, col.names=c('#Chr','Start','End','PeakID')))
 ```
 <br>  
 
@@ -1462,6 +1542,14 @@ ar3$cluster <- as.factor(ar3$cluster)
 pheatmap(as.matrix(ar[2:9]), cluster_rows = F, color = niceCols, annotation_row = ar3)
 ```
 <br>
+
+
+#### Annotation of differential peaks in ChIPseeker
+```{r annot_varpeaks}
+# load files
+
+```
+<br>  
 
 
 #### HOLD -- Hclust on random samples generated from **QN normalized** set of all strong peaks
@@ -1769,7 +1857,8 @@ library(fpc)
 
 
 
-#### **Purgatory** clustering from 2p5 rpm cutoff, non-QN-norm (may delete if 2rpm looks good)
+#### --- **Purgatory** ------------------------------------------------------------------------------------
++ clustering from 2p5 rpm cutoff, non-QN-norm (may delete if 2rpm looks good)
 #### Start by clustering random samples generated from set of all strong peaks
 **Pseudo:**
 + hclust, different distance metrics     
@@ -2007,7 +2096,6 @@ apRes <- apcluster(negDistMat(r=2), sl[[3]])
 ```
 <br>  
 
-
 #### Clustering on all peaks after removing outliers
 **Pseudo:**
 + define outliers (1.5*IQR?) 
@@ -2017,28 +2105,6 @@ apRes <- apcluster(negDistMat(r=2), sl[[3]])
 + sample and combine samples into list as above
 + call new set 'slno' [s]ubset[l]ist[n]o[outliers]
 <br>  
-
-
-#### Finding best heatmap colors for clusters
-```{r colors}
-eqSpect <- colorRampPalette(
-               c("#f2003c", "#F66900", "#F19100", "#F1B100",
-                 "#EFD300", "#f0ea00", "#CBDB00", "#9DD501",
-                 "#5ED108", "#00AF63", "#00A78E", "#00a3ac",
-                 "#0093af", "#0082b2", "#006ebf", "#4F37C2",
-                 "#8000D3", "#A001BF", "#BA00A4", "#D0007F"),
-                 space="rgb",
-                 interpolate="spline")
-n <- 16
-
-niceCols <- eqSpect(n)
-
-# or 
-niceCols <- colorRampPalette(rev(brewer.pal(10, 'Spectral')))(50)
-niceCols <- rev(brewer.pal(11, 'Spectral'))
-```
-<br>  
-
 
 #### Deprecated
 ```{r deprecated}
@@ -2078,8 +2144,3 @@ sl3dfco2 <- sl3dfc[order(sl3dfc$cluster,sl3dfc$Spl_wMus_Treg,sl3dfc$Spl_wVAT_Tre
                          sl3dfc$Vat_Treg, sl3dfc$Mus_Treg, sl3dfc$Cln_Nrp1n_Treg,
                          sl3dfc$Cln_Nrp1p_Treg),]
 ```
-
-
-
-
-
