@@ -455,6 +455,8 @@ path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEp
 # raw values as RDa
 suffix <- paste0('a5-ttreg-', n,'rpm-filtered-rep-avg-counts-rpkm-qn')
 save(ttr.avg, file=paste0(path,suffix,'.RDa'))
+# load 
+load(paste0(path, 'a5-ttreg-2rpm-filtered-rep-avg-counts-rpkm-qn.RDa'))
 
 # raw values as .csv
 write.csv(ttr.avg, file=paste0(path,suffix,'.csv'), row.names=F) # as csv
@@ -476,6 +478,9 @@ par(oma = c(4,1,0.5,1))
 boxplot(log(ttr.avg[6:13],2), las=2, cex.axis=0.7,
         ylab='replicate avg log2rpkm',main=paste('merged atac peaks','n=',nrow(ttr.avg),sep=""))
 dev.off()
+
+# MA plots 
+
 
 ##---- log2 convert and export --------------------------------------------------------------------------------
 ttr.avg.l2 <- ttr.avg #[t][tr]eg[a]verage[l]og[2]
@@ -708,6 +713,130 @@ load(file = paste(path,file,'.RDa',sep=""))
 <br>  
 
 
+#### APclust on variable peaks after scaling all rows between 0 and 1
++ currently doing this on orchestra R
+```{r apclust_normd_varpeaks}
+## ---- load peak samples -----------------------------------------------------------------------------------------
+#path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Ana#lyses/A5-all-ttreg/2rpm-filtered/RDa/" # set data path
+path <- '/groups/cbdm-db/jrd26/ATAC_crossbatch/R/Analysis5/RDa/'
+file <- 'a5-ttreg-2rpm-fc2-pass'
+load(file = paste(path,file,'.RDa',sep=""))
+
+# convert to matrix
+ttrm <- as.matrix(ttrm.fc2.pass)
+head(dimnames(ttrm),10)
+
+# scale all rows between 0 and 1
+ttrmNorm <- t(apply(ttrm,1,function(x) (x-min(x))/ (max(x)-min(x))))
+
+## ---- APcluster ------------------------------------------------------------------------------------------------
+library(apcluster)
+
+# find range of input prefs
+preferenceRange(negDistMat(r=2)(ttrmNorm))
+
+# cluster
+ap1 <- apclusterL(negDistMat(r=2), ttrm, p=-1000, frac = 0.05, sweeps = 3)
+# 19 clusters
+
+ap1 <- apclusterL(negDistMat(r=2), ttrm, p=-2000, frac = 0.05, sweeps = 3)
+#  13 clusters
+
+# plot
+plot(ap1, ttrmNorm)
+# difficult to see bc ranges so small
+
+heatmap(ap1)
+# some block structure, still not great 
+
+# scatter plot and save
+path <- '/groups/cbdm-db/jrd26/ATAC_crossbatch/R/Analysis5/plots/'
+
+file <- 'a5-ttreg-2rpm-filtered-qn-fc2-pass-rowscale-apclust-13'
+pdf(file = paste0(path,file,'.pdf'), width=15, height=15)
+plot(ap1, ttrmNorm)
+dev.off()
+
+png(file = paste0(path,file,'.png'), width=1000, height=1000)
+plot(ap1, ttrm)
+dev.off()
+
+## ---- append clusterID to peak signal values --------------------------------------------------------------------
+
+# append clustID to peaks
+cl <- ap1@clusters # extract AP clusters # [c]luster[l]ist
+names(cl) <- c(1:length(cl))
+
+pdfc <- data.frame() #[p]eak[d]ata[f]rame[c]lusters
+
+for (i in 1:length(cl)) { # loop over cluster list and append clusterID to peak
+  df <- data.frame(PeakID = names(cl[[i]]), ClusterID = names(cl[i]))
+  pdfc <- rbind(pdfc, df)
+}
+
+# convert sample 3 (n = 10000 peaks) to dataframe
+pdf <- data.frame(PeakID = rownames(ttrmNorm), ttrmNorm, row.names=NULL)  # [p]eak[d]ata[f]rame
+
+# add clusterID onto df
+library(dplyr)
+pdfc <- left_join(pdfc, pdf, by = 'PeakID') 
+
+# check
+summary(pdfc$ClusterID)
+ttrmNorm[rownames(ttrmNorm)=='peak_43155',]
+pdfc[pdfc$PeakID=='peak_43155',]
+
+# order
+pdfco <- pdfc[order(pdfc$ClusterID),]
+
+# save ordered df
+path <- '/groups/cbdm-db/jrd26/ATAC_crossbatch/R/Analysis5/RDa/'
+save(pdfco, file = paste0(path,'a5-ttreg-2rpm-filtered-qn-fc2-pass-rownorm-apclust-13-pdfco.RDa'))
+
+##---- pheatmap results across samples ----------------------------------------------------------------------------
+# redraw sample/peak heatmap based on cluster results
+library(pheatmap)
+library(RColorBrewer)
+
+# set colors
+niceCols <- colorRampPalette(rev(brewer.pal(11, 'Spectral')))(50)
+
+# make df for plotting heatmap based on APclust
+heat.df <- data.frame(pdfco, row.names = pdfco$PeakID) # make new df for cluster annotations
+heat.annot <- heat.df[2]
+heat.annot$ClusterID <- as.factor(heat.annot$ClusterID)
+
+# set row gaps based on clusters 
+rows <- list()
+for (i in 1:13) {
+  rows[i] <- nrow(heat.df[heat.df$ClusterID==i,])
+}
+row_gaps <- unlist(rows)
+row_gaps2 <- c(row_gaps[1], sum(row_gaps[1:2]), sum(row_gaps[1:3]), sum(row_gaps[1:4]),
+               sum(row_gaps[1:5]), sum(row_gaps[1:6]), sum(row_gaps[1:7]), sum(row_gaps[1:8]),
+               sum(row_gaps[1:9]), sum(row_gaps[1:10]), sum(row_gaps[1:11]), sum(row_gaps[1:12]))
+
+# draw heatmap
+pheatmap(as.matrix(heat.df[3:10]), cluster_rows = F, color = niceCols, annotation_row = heat.annot,
+         show_rownames = F, border_color = 'black', gaps_row = row_gaps2)
+
+# print and save pdf
+path <- '/groups/cbdm-db/jrd26/ATAC_crossbatch/R/Analysis5/plots/'
+pdf(paste0(path,"a5-ttreg-2rpm-filtered-pheat-qn-fc2-pass-rownorm-apclust-13.pdf"), width=12, height=12)
+pheatmap(as.matrix(heat.df[3:10]), cluster_rows = F, color = niceCols, annotation_row = heat.annot,
+         show_rownames = F, border_color = 'black', gaps_row = row_gaps2)
+dev.off()
+
+# print and save png
+png(paste0(path,"a5-ttreg-2rpm-filtered-pheat-qn-fc2-pass-rownorm-apclust-13.png"), width=1200, height=1200)
+pheatmap(as.matrix(heat.df[3:10]), cluster_rows = F, color = niceCols, annotation_row = heat.annot,
+         show_rownames = F, border_color = 'black', gaps_row = row_gaps2)
+dev.off()
+
+```
+<br>
+
+
 #### APclust on variable peaks (pair-wise fold-changes of qn-normalized rpkm signal)
 ```{r apclust_varpeaks}
 ## ---- load peak samples -----------------------------------------------------------------------------------------
@@ -735,7 +864,7 @@ ap1 <- apclusterL(negDistMat(r=2), ttrm, p=-2000, frac = 0.1, sweeps = 5)
 # 13
 
 ap1 <- apclusterL(negDistMat(r=2), ttrm, p=-3000, frac = 0.1, sweeps = 5)
-# 
+# 9 clusters => move forward with these
 
 # scatter plot and save
 path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/plots/"
@@ -788,19 +917,47 @@ load(paste0(path,'a5-qn-fc2-pass-apclust-9-pdfco.RDa'))
 
 ##---- pheatmap results across samples ----------------------------------------------------------------------------
 # redraw sample/peak heatmap based on cluster results
-#pdf(paste0(path,"a5-pheatmap-qn-apclust-16.pdf"), width=10, height=10)
 library(pheatmap)
 library(RColorBrewer)
 
-niceCols <- colorRampPalette(rev(brewer.pal(10, 'Spectral')))(50) # set colors
-niceCols <- rev(brewer.pal(10, 'Spectral')) # try different
+# set colors
+niceCols <- colorRampPalette(rev(brewer.pal(11, 'Spectral')))(50)
 
-path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/plots/"
-png(paste0(path,"a5-pheat-qn-fc2-pass-apclust-9.png"), width=1000, height=1000)
-pheatmap(as.matrix(pdfco[3:10]), cluster_rows = F, color = niceCols)
+# set row gaps based on clusters 
+rows <- list()
+for (i in 1:9) {
+  rows[i] <- nrow(heat.df[heat.df$ClusterID==i,])
+}
+row_gaps <- unlist(rows)
+row_gaps2 <- c(row_gaps[1], sum(row_gaps[1:2]), sum(row_gaps[1:3]), sum(row_gaps[1:4]),
+               sum(row_gaps[1:5]), sum(row_gaps[1:6]), sum(row_gaps[1:7]), sum(row_gaps[1:8]))
+
+# redraw heatmap based on APclust
+heat.df <- data.frame(pdfco, row.names = pdfco$PeakID) # make new df for cluster annotations
+heat.annot <- heat.df[2]
+heat.annot$ClusterID <- as.factor(heat.annot$ClusterID)
+pheatmap(as.matrix(heat.df[3:10]), cluster_rows = F, color = niceCols, annotation_row = heat.annot,
+         show_rownames = F, border_color = 'black', gaps_row = row_gaps2)
+
+# print and save pdf
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/plots/" 
+pdf(paste0(path,"a5-pheat-qn-fc2-pass-apclust-9.pdf"), width=12, height=12)
+pheatmap(as.matrix(heat.df[3:10]), cluster_rows = F, color = niceCols, annotation_row = heat.annot,
+         show_rownames = F, border_color = 'black', gaps_row = row_gaps2)
 dev.off()
 
+# print and save png
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/plots/" 
+png(paste0(path,"a5-pheat-qn-fc2-pass-apclust-9.png"), width=1200, height=1200)
+pheatmap(as.matrix(heat.df[3:10]), cluster_rows = F, color = niceCols, annotation_row = heat.annot,
+         show_rownames = F, border_color = 'black', gaps_row = row_gaps2)
+dev.off()
+
+
 ##---- heatmap2 results across samples ----------------------------------------------------------------------------
+
+# not working nicely yet
+
 library(gplots)
 library(RColorBrewer)
 
@@ -1013,6 +1170,72 @@ load(paste0(path,'a5-qn-fc2-fail-apclust-5-pdfco.RDa'))
 
 
 ##---- pheatmap results across samples ----------------------------------------------------------------------------
+# redraw sample/peak heatmap based on cluster results
+library(pheatmap)
+library(RColorBrewer)
+
+# set colors
+niceCols <- colorRampPalette(rev(brewer.pal(11, 'Spectral')))(50)
+
+# make df for plotting heatmap
+heat.df <- data.frame(pdfco, row.names = pdfco$PeakID) # make new df for cluster annotations
+heat.annot <- heat.df[2]
+heat.annot$ClusterID <- as.factor(heat.annot$ClusterID)
+
+# set row gaps based on clusters 
+summary(pdfco$ClusterID)
+rows <- list()
+for (i in 1:length(unique(pdfco$ClusterID))) {
+  rows[i] <- nrow(heat.df[heat.df$ClusterID==i,])
+}
+row_gaps <- unlist(rows)
+row_gaps2 <- c(row_gaps[1], sum(row_gaps[1:2]), sum(row_gaps[1:3]), sum(row_gaps[1:4]))
+
+# redraw heatmap based on APclust
+pheatmap(as.matrix(heat.df[3:10]), cluster_rows = F, color = niceCols, annotation_row = heat.annot,
+         show_rownames = F, border_color = 'black', gaps_row = row_gaps2)
+
+# print and save pdf
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/plots/" 
+pdf(paste0(path,"a5-pheat-qn-fc2-fail-apclust-5.pdf"), width=12, height=12)
+pheatmap(as.matrix(heat.df[3:10]), cluster_rows = F, color = niceCols, annotation_row = heat.annot,
+         show_rownames = F, border_color = 'black', gaps_row = row_gaps2)
+dev.off()
+
+# print and save png
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/plots/" 
+png(paste0(path,"a5-pheat-qn-fc2-fail-apclust-5.png"), width=1200, height=1200)
+pheatmap(as.matrix(heat.df[3:10]), cluster_rows = F, color = niceCols, annotation_row = heat.annot,
+         show_rownames = F, border_color = 'black', gaps_row = row_gaps2)
+dev.off()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 # redraw sample/peak heatmap based on cluster results
 #pdf(paste0(path,"a5-pheatmap-qn-apclust-16.pdf"), width=10, height=10)
@@ -1138,6 +1361,107 @@ dev.off()
 ```
 <br>  
 
+
+#### Hclust and Km on all **QN normalized** strong peaks
+```{r Hc_Km_allqnpeaks}
+## ---- load peaks ---------------------------------------------------------------------------------------------
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/csv/" # set data path
+ttrm <- read.csv(file=paste0(path, 'a5-ttreg-2rpm-filtered-rep-avg-counts-log2-rpkm-qn-peakID-mat.csv'),
+                 row.names=1, header=T)
+
+# convert to matrix
+ttrm <- as.matrix(ttrm)
+head(dimnames(ttrm),10)
+
+##---- try hclust in pheatmap() --------------------------------------------------------------------
+
+
+
+##---- try kmeans function in pheatmap() --------------------------------------------------------------------
+library(pheatmap)
+library(RColorBrewer)
+
+# set colors
+niceCols <- colorRampPalette(rev(brewer.pal(11, 'Spectral')))(50)
+
+set.seed(123456)
+# save results of pheatmap to object p
+p <- pheatmap(ttrm, color= niceCols, clustering_distance_rows = 'minkowski', clustering_distance_cols = 'correlation', kmeans_k = 18)
+
+# print
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/plots/" 
+file <- 'a5-ttreg-2rpm-filtered-qn-allpks-pheat-hc-km-k18'
+pdf(paste0(path,file,'.pdf'), width=10, height=10)
+p <- pheatmap(ttrm, color= niceCols, clustering_distance_rows = 'minkowski', clustering_distance_cols = 'correlation', kmeans_k = 18)
+dev.off()
+
+png(paste0(path,file,'.png'), width=1000,height=1000)
+p <- pheatmap(ttrm, color= niceCols, clustering_distance_rows = 'minkowski', clustering_distance_cols = 'correlation', kmeans_k = 18)
+dev.off()
+
+# extract results of kmeans
+k <- p$kmeans
+# save
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/RDa/" 
+save(k, file = paste0(path,'a5-ttreg-2rpm-filtered-qn-allpks-pheat-km-k18.RDa'))
+
+# extract kmeans clusters
+c <- p$kmeans$cluster 
+# convert cluster and peak IDs to df
+cdf <- data.frame(peak = names(c), cluster = c, row.names= NULL) # [c]luster[d]ata[f]rame
+# convert ttreg peak matrix to dataframe
+ttr.df <- data.frame(peak = rownames(ttrm), ttrm, row.names=NULL) #[ttr]eg[d]ata[frame]
+# add clusterID onto df
+library(dplyr)
+ttrdfc <- left_join(ttr.df, cdf, by = 'peak') # [ttr]eg[d]ata[f]rame[c]lusters
+
+# check that join worked properly by looking up rpm values in original sample matrix
+ttrm[rownames(ttrm)=='peak_5710',]
+ttrdfc[ttrdfc$peak=='peak_5710',]
+
+# save
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/RDa/" 
+save(ttrdfc, file=paste0(path,'a5-ttreg-2rpm-filtered-qn-allpks-pheat-k18-ttrdfc.RDa'))
+# load
+load(paste0(path,'a5-sl3dfc.RDa'))
+
+# order df
+ttrdfco <- ttrdfc[order(ttrdfc$cluster),] # ttrdfc[o]rdered
+
+# save
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/RDa/" 
+save(ttrdfc, file=paste0(path,'a5-ttreg-2rpm-filtered-qn-allpks-pheat-k18-ttrdfc0.RDa'))
+
+# redraw heatmap based on kmeans
+heat.df <- data.frame(ttrdfco, row.names = ttrdfco$peak) # make new df for cluster annotations 
+heat.annot <- heat.df[-c(1:9)]
+heat.annot$cluster <- as.factor(heat.annot$cluster)
+pheatmap(as.matrix(heat.df[2:9]), cluster_rows = F, color = niceCols, annotation_row = heat.annot,
+         show_rownames = F)
+# print and save pdf
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/plots/" 
+pdf(paste0(path,"a5-ttreg-2rpm-filtered-qn-allpks-pheat-km-k18-allrows.pdf"), width=12, height=12)
+pheatmap(as.matrix(heat.df[2:9]), cluster_rows = F, color = niceCols, annotation_row = heat.annot,
+         show_rownames = F)
+dev.off()
+
+# print and save png
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/plots/" 
+png(paste0(path,"a5-ttreg-2rpm-filtered-qn-allpks-pheat-km-k18-allrows.png"), width=1200, height=1200)
+pheatmap(as.matrix(heat.df[2:9]), cluster_rows = F, color = niceCols, annotation_row = heat.annot,
+         show_rownames = F)
+dev.off()
+
+#####
+dev.off()
+# test 
+ar <- data.frame(ttrdfco, row.names= ttrdfco$peak)
+ar2 <- ar[-c(1:9)]
+ar3 <- ar2
+ar3$cluster <- as.factor(ar3$cluster)
+pheatmap(as.matrix(ar[2:9]), cluster_rows = F, color = niceCols, annotation_row = ar3)
+```
+<br>
 
 
 #### HOLD -- Hclust on random samples generated from **QN normalized** set of all strong peaks
@@ -1683,6 +2007,7 @@ apRes <- apcluster(negDistMat(r=2), sl[[3]])
 ```
 <br>  
 
+
 #### Clustering on all peaks after removing outliers
 **Pseudo:**
 + define outliers (1.5*IQR?) 
@@ -1692,13 +2017,6 @@ apRes <- apcluster(negDistMat(r=2), sl[[3]])
 + sample and combine samples into list as above
 + call new set 'slno' [s]ubset[l]ist[n]o[outliers]
 <br>  
-
-
-#### Clustering on only the variable peaks OR separately on similar and variable
-**Pseudo:**
-+ decide between using variance or FC >= n in >=1 pair-wise   
-+ could do FC >=4 --> hc ; FC <4 --> hc
-+ what if row-scale after finding good clusters
 
 
 #### Finding best heatmap colors for clusters
@@ -1720,8 +2038,6 @@ niceCols <- colorRampPalette(rev(brewer.pal(10, 'Spectral')))(50)
 niceCols <- rev(brewer.pal(11, 'Spectral'))
 ```
 <br>  
-
-
 
 
 #### Deprecated
