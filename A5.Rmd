@@ -653,6 +653,493 @@ ggsave(file = paste0(path,suffix,'.pdf'),width=8,height=7) # save
 <br>
 
 
+#### Divide peaks into similar and variable subsets
+```{r find_var_peaks}
+# read in df of peak scores
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/csv/" # set data path
+ttrm <- read.csv(file=paste0(path, 'a5-ttreg-2rpm-filtered-rep-avg-counts-log2-rpkm-qn-peakID-mat.csv'),
+                 row.names=1, header=T)
+
+
+# use apply() and combn() to compute fold-changes and store as new matrix
+fcmat <- apply(combn(ncol(ttrm),2),2,
+               function(x) ttrm[,x[1]] / ttrm[,x[2]])
+colnames(fcmat) <- apply(combn(ncol(ttrm),2),2,
+                         function(x) paste(names(ttrm)[x], collapse="/"))
+
+# for each row of the FC matrix, evaluate whether any value is > FC cutoff, store results in new vectors
+FC2_pass <- apply(fcmat,1, function(x) any(x >=2 | x <= (1/2)))
+FC3_pass <- apply(fcmat,1, function(x) any(x >=3 | x <= (1/3)))
+FC4_pass <- apply(fcmat,1, function(x) any(x >=4 | x <= (1/4)))
+
+# combine into list
+fcpl <- list("FC2" = FC2_pass, "FC3"=FC3_pass, "FC4"=FC4_pass) #[f]old[c]hange[p]ass[l]ist
+
+# bind these logical vectors to the original peak matrix
+ttrm <- cbind(ttrm, fcpl) 
+
+# create a summary table of number of peaks that pass each FC cutoff
+fcst <- data.frame(sapply(fcpl, table))  # [f]old[c]hange[s]ummary[t]able
+
+# save to file
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/csv/" # set data path
+file <- 'a5-ttreg-2rpm-filtered-fcmat-summary.csv'
+write.csv(fcst, paste0(path,file))
+
+# create data frame subsets with peaks passing these criteria
+# write functions for these / find way to clean up!
+ttrm.fc2.pass <- ttrm[ttrm$FC2 =="TRUE",] # fc >=2 in at least one pair-wise comparison
+ttrm.fc2.fail <- ttrm[ttrm$FC2 =="FALSE",] # fc <=2 in all pair-wise comparisons
+
+# remove filter columns and save
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/RDa/" # set data path
+ttrm.fc2.pass <- ttrm.fc2.pass[,-c(9:11)]
+file <- 'a5-ttreg-2rpm-fc2-pass'
+save(ttrm.fc2.pass, file = paste0(path,file,'.RDa'))
+# load 
+load(file = paste(path,file,'.RDa',sep=""))
+
+ttrm.fc2.fail <- ttrm.fc2.fail[,-c(9:11)]
+file <- 'a5-ttreg-2rpm-fc2-fail'
+save(ttrm.fc2.fail, file = paste0(path,file,'.RDa'))
+# load 
+load(file = paste(path,file,'.RDa',sep=""))
+```
+<br>  
+
+
+#### APclust on variable peaks (pair-wise fold-changes of qn-normalized rpkm signal)
+```{r apclust_varpeaks}
+## ---- load peak samples -----------------------------------------------------------------------------------------
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/RDa/" # set data path
+file <- 'a5-ttreg-2rpm-fc2-pass'
+load(file = paste(path,file,'.RDa',sep=""))
+
+# convert to matrix
+ttrm <- as.matrix(ttrm.fc2.pass)
+head(dimnames(ttrm),10)
+
+
+## ---- APcluster ------------------------------------------------------------------------------------------------
+library(apcluster)
+
+# find range of input prefs
+preferenceRange(negDistMat(r=2)(ttrm))
+# result = -2.358491e+05 -8.415955e-02
+
+# cluster
+ap1 <- apclusterL(negDistMat(r=2), ttrm, p=-700, frac = 0.05, sweeps = 5)
+# 28 clusters
+
+ap1 <- apclusterL(negDistMat(r=2), ttrm, p=-2000, frac = 0.1, sweeps = 5)
+# 13
+
+ap1 <- apclusterL(negDistMat(r=2), ttrm, p=-3000, frac = 0.1, sweeps = 5)
+# 
+
+# scatter plot and save
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/plots/"
+file <- 'a5-ttreg-2rpm-filtered-fc2-pass-apclust-9'
+pdf(file = paste0(path,file,'.pdf'), width=15, height=15)
+plot(ap1, ttrm)
+dev.off()
+
+png(file = paste0(path,file,'.png'), width=1000, height=1000)
+plot(ap1, ttrm)
+dev.off()
+
+# eventually plot heatmap but takes long time
+# heatmap(ap1)
+
+
+## ---- append clusterID to peak signal values --------------------------------------------------------------------
+
+# append clustID to peaks
+cl <- ap1@clusters # extract AP clusters # [c]luster[l]ist
+names(cl) <- c(1:length(cl))
+
+pdfc <- data.frame() #[p]eak[d]ata[f]rame[c]lusters
+
+for (i in 1:length(cl)) { # loop over cluster list and append clusterID to peak
+  df <- data.frame(PeakID = names(cl[[i]]), ClusterID = names(cl[i]))
+  pdfc <- rbind(pdfc, df)
+}
+
+# convert sample 3 (n = 10000 peaks) to dataframe
+pdf <- data.frame(PeakID = rownames(ttrm), ttrm, row.names=NULL)  # [p]eak[d]ata[f]rame
+
+# add clusterID onto df
+library(dplyr)
+pdfc <- left_join(pdfc, pdf, by = 'PeakID') 
+
+# check
+summary(pdfc$ClusterID)
+ttrm[rownames(ttrm)=='peak_43155',]
+pdfc[pdfc$PeakID=='peak_43155',]
+
+# order
+pdfco <- pdfc[order(pdfc$ClusterID),]
+
+# save ordered df
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/RDa/"
+save(pdfco, file = paste0(path,'a5-qn-fc2-pass-apclust-9-pdfco.RDa'))
+# to reload
+load(paste0(path,'a5-qn-fc2-pass-apclust-9-pdfco.RDa'))
+
+##---- pheatmap results across samples ----------------------------------------------------------------------------
+# redraw sample/peak heatmap based on cluster results
+#pdf(paste0(path,"a5-pheatmap-qn-apclust-16.pdf"), width=10, height=10)
+library(pheatmap)
+library(RColorBrewer)
+
+niceCols <- colorRampPalette(rev(brewer.pal(10, 'Spectral')))(50) # set colors
+niceCols <- rev(brewer.pal(10, 'Spectral')) # try different
+
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/plots/"
+png(paste0(path,"a5-pheat-qn-fc2-pass-apclust-9.png"), width=1000, height=1000)
+pheatmap(as.matrix(pdfco[3:10]), cluster_rows = F, color = niceCols)
+dev.off()
+
+##---- heatmap2 results across samples ----------------------------------------------------------------------------
+library(gplots)
+library(RColorBrewer)
+
+test <- pdfco
+cols <- palette(brewer.pal(8, "Dark2"))[as.numeric(pdfco$ClusterID)]
+head(cbind(rownames(test),cols))
+
+
+# set colors
+hmcol <- colorRampPalette(brewer.pal(9, "GnBu"))(100)
+
+# draw
+heatmap.2(as.matrix(test[3:10]),
+          trace="none", 
+          ColSideColors=cols, 
+          col=hmcol)
+
+##---- ggplot2 results across samples ----------------------------------------------------------------------------
+library(reshape2)
+library(ggplot2)
+# start with copy of pdfco 
+str(pdfco)
+x <- pdfco
+str(x)
+x <- x[c(3:10,1,2)]
+str(x)
+
+# sort peaks by cluster
+x$peaksort <- x$PeakID[order(x$ClusterID)]
+str(x)
+x$peaksort <- order(x$ClusterID, rowMeans(x[1:4]))
+head(x)
+
+# melt
+xm <- melt(x, id.vars=c('PeakID','peaksort'))
+xm$value <- as.numeric(xm$value)
+
+# set colors 
+niceCols <- colorRampPalette(rev(brewer.pal(11, 'Spectral')))(50)
+
+# plot
+ggplot(xm, aes(x=variable, y=peaksort)) + geom_tile(aes(fill=value)) +
+scale_fill_gradientn(colors = colorRampPalette(rev(brewer.pal(11, 'Spectral')))(50)) + 
+  theme_bw()
+
+
+## ---- matplots results across samples -------------------------------------------------------------------------
+# extract each cluster and combine into a list
+cl <- list() # [c]luster [l]ist
+for (i in 1:length(unique(pdfco$ClusterID))) {
+  cl[[i]] <- as.matrix(pdfco[3:10][pdfco$ClusterID == i,],)
+}
+
+# set colors
+eqSpect <- colorRampPalette(
+               c("#f2003c", "#F66900", "#F19100", "#F1B100",
+                 "#EFD300", "#f0ea00", "#CBDB00", "#9DD501",
+                 "#5ED108", "#00AF63", "#00A78E", "#00a3ac",
+                 "#0093af", "#0082b2", "#006ebf", "#4F37C2",
+                 "#8000D3", "#A001BF", "#BA00A4", "#D0007F"),
+                 space="rgb",
+                 interpolate="spline")
+n <- length(unique(pdfco$ClusterID))
+
+niceCols <- eqSpect(n)
+
+
+# define function to draw matplot for each cluster with mean trendline
+matplusmean <- function(x) {
+  # x = list of peak matrices
+  # draw matplots
+  matplot(t(x[[i]]),
+          type = 'l', col = niceCols[i],
+          xlab = 'Tissue Treg', ylab= 'log2 rpkm',
+             xlim=c(1,8),ylim=c(-2,9), xaxt='n')
+  # label x axis
+  axis(1, at=1:8, labels=c('Cn','Cp','M','V','SCn','SCp','SM','SV'))
+  # draw trendline
+  points(x = seq(1,8,by=1), y=colMeans(cl[[i]]),lwd=4, col='black',type='l')
+}
+
+# set path and device
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/plots/"
+pdf(paste0(path,"a5-qn-fc2-pass-apclust-9-matplots-mean-trend.pdf"), width=15, height=15)
+
+# set rows and columns
+par(mfrow = c(4,4))
+# run
+for (i in 1:length(unique(pdfco$ClusterID))) {
+  matplusmean(cl)
+}
+# save
+dev.off()
+
+
+# define function to draw matplot for each cluster with median trendline
+matplusmeds <- function(x) {
+  # x = list of peak matrices
+  matplot(t(x[[i]]),
+          type = 'l', col = niceCols[i],
+          xlab = 'Tissue Treg', ylab= 'log2 rpkm',
+             xlim=c(1,8),ylim=c(-2,9),xaxt='n')
+  # find median
+  med <- apply(x[[i]],2,median)
+  # label x axis
+  axis(1, at=1:8, labels=c('Cn','Cp','M','V','SCn','SCp','SM','SV'))
+  # add trendline
+  points(x = seq(1,8,by=1), y=med,lwd=4, col='black',type='l')
+}
+
+# set path and device
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/plots/"
+pdf(paste0(path,"a5-qn-fc2-pass-apclust-9-matplots-med-trend.pdf"), width=15, height=15)
+
+# set rows and columns
+par(mfrow = c(4,4))
+# run
+for (i in 1:length(unique(pdfco$ClusterID))) {
+  matplusmeds(cl)
+}
+# save
+dev.off()
+```
+<br>  
+
+
+#### APclust on similar peaks (pair-wise fold-changes of qn-normalized rpkm signal)
+```{r apclust_varpeaks}
+## ---- load peak samples -----------------------------------------------------------------------------------------
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/RDa/" # set data path
+file <- 'a5-ttreg-2rpm-fc2-fail'
+load(file = paste(path,file,'.RDa',sep=""))
+
+# convert to matrix
+ttrm <- as.matrix(ttrm.fc2.fail)
+head(dimnames(ttrm),10)
+
+
+## ---- APcluster ------------------------------------------------------------------------------------------------
+library(apcluster)
+
+# find range of input prefs
+#preferenceRange(negDistMat(r=2)(ttrm))
+
+
+# cluster
+ap1 <- apclusterL(negDistMat(r=2), ttrm, q=0, frac = 0.01, sweeps = 3)
+# 28
+
+ap1 <- apclusterL(negDistMat(r=2), ttrm, p=-700, frac = 0.01, sweeps = 3)
+# 20 clusters
+
+ap1 <- apclusterL(negDistMat(r=2), ttrm, p=-3000, frac = 0.01, sweeps = 3)
+# 8 clusters
+
+ap1 <- apclusterL(negDistMat(r=2), ttrm, p=-5000, frac = 0.01, sweeps = 3)
+# 7 clusters
+
+ap1 <- apclusterL(negDistMat(r=2), ttrm, p=-8000, frac = 0.01, sweeps = 3)
+#  5 clusters
+
+
+# scatter plot and save
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/plots/"
+file <- 'a5-ttreg-2rpm-filtered-fc2-fail-apclust-5'
+pdf(file = paste0(path,file,'.pdf'), width=15, height=15)
+plot(ap1, ttrm)
+dev.off()
+
+png(file = paste0(path,file,'.png'), width=1000, height=1000)
+plot(ap1, ttrm)
+dev.off()
+
+# eventually plot heatmap, figure out how to speed up
+# heatmap(ap1)
+
+## ---- append clusterID to peak signal values --------------------------------------------------------------------
+
+# append clustID to peaks
+cl <- ap1@clusters # extract AP clusters # [c]luster[l]ist
+names(cl) <- c(1:length(cl))
+
+pdfc <- data.frame() #[p]eak[d]ata[f]rame[c]lusters
+
+for (i in 1:length(cl)) { # loop over cluster list and append clusterID to peak
+  df <- data.frame(PeakID = names(cl[[i]]), ClusterID = names(cl[i]))
+  pdfc <- rbind(pdfc, df)
+}
+
+# convert sample 3 (n = 10000 peaks) to dataframe
+pdf <- data.frame(PeakID = rownames(ttrm), ttrm, row.names=NULL)  # [p]eak[d]ata[f]rame
+
+# add clusterID onto df
+library(dplyr)
+pdfc <- left_join(pdfc, pdf, by = 'PeakID') 
+
+# check
+summary(pdfc$ClusterID)
+ttrm[rownames(ttrm)=='peak_43155',]
+pdfc[pdfc$PeakID=='peak_43155',]
+
+# order
+pdfco <- pdfc[order(pdfc$ClusterID),]
+
+# save ordered df
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/RDa/"
+save(pdfco, file = paste0(path,'a5-qn-fc2-fail-apclust-5-pdfco.RDa'))
+# to reload
+load(paste0(path,'a5-qn-fc2-fail-apclust-5-pdfco.RDa'))
+
+
+##---- pheatmap results across samples ----------------------------------------------------------------------------
+
+# redraw sample/peak heatmap based on cluster results
+#pdf(paste0(path,"a5-pheatmap-qn-apclust-16.pdf"), width=10, height=10)
+library(pheatmap)
+library(RColorBrewer)
+
+#niceCols <- colorRampPalette(rev(brewer.pal(10, 'Spectral')))(50) # set colors
+niceCols <- rev(brewer.pal(10, 'Spectral')) # try different
+
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/plots/"
+png(paste0(path,"a5-pheatp-qn-apclust-fc2-fail-k5.png"), width=500, height=500)
+pheatmap(as.matrix(pdfco[3:10]), cluster_rows = F, color = niceCols)
+dev.off()
+
+## ---- ggplot heatmap across samples --------------------------------------------------------------------------
+library(reshape2)
+library(ggplot2)
+# start with copy of pdfco 
+str(pdfco)
+x <- pdfco
+str(x)
+x <- x[c(3:10,1,2)]
+str(x)
+
+# sort peaks by cluster
+x$peaksort <- x$PeakID[order(x$ClusterID)]
+str(x)
+x$peaksort <- order(x$ClusterID, rowMeans(x[1:4]))
+head(x)
+
+# melt
+xm <- melt(x, id.vars=c('PeakID','peaksort'))
+xm$value <- as.numeric(xm$value)
+
+# set colors 
+niceCols <- colorRampPalette(rev(brewer.pal(11, 'Spectral')))(50)
+
+# plot
+ggplot(xm, aes(x=variable, y=peaksort)) + geom_tile(aes(fill=value)) +
+scale_fill_gradientn(colors = colorRampPalette(rev(brewer.pal(11, 'Spectral')))(50)) + 
+  theme_bw()
+# save
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/plots/"
+ggsave(paste0(path,"a5-pheatp-qn-apclust-fc2-fail-k5-gg.pdf"), height=10, width=10)
+
+
+## ---- matplots results across samples -------------------------------------------------------------------------
+# extract each cluster and combine into a list
+cl <- list() # [c]luster [l]ist
+for (i in 1:length(unique(pdfco$ClusterID))) {
+  cl[[i]] <- as.matrix(pdfco[3:10][pdfco$ClusterID == i,],)
+}
+
+# set colors
+eqSpect <- colorRampPalette(
+               c("#f2003c", "#F66900", "#F19100", "#F1B100",
+                 "#EFD300", "#f0ea00", "#CBDB00", "#9DD501",
+                 "#5ED108", "#00AF63", "#00A78E", "#00a3ac",
+                 "#0093af", "#0082b2", "#006ebf", "#4F37C2",
+                 "#8000D3", "#A001BF", "#BA00A4", "#D0007F"),
+                 space="rgb",
+                 interpolate="spline")
+n <- length(unique(pdfco$ClusterID))
+
+niceCols <- eqSpect(n)
+
+
+# define function to draw matplot for each cluster with mean trendline
+matplusmean <- function(x) {
+  # x = list of peak matrices
+  # draw matplots
+  matplot(t(x[[i]]),
+          type = 'l', col = niceCols[i],
+          xlab = 'Tissue Treg', ylab= 'log2 rpkm',
+             xlim=c(1,8),ylim=c(-2,9), xaxt='n')
+  # label x axis
+  axis(1, at=1:8, labels=c('Cn','Cp','M','V','SCn','SCp','SM','SV'))
+  # draw trendline
+  points(x = seq(1,8,by=1), y=colMeans(cl[[i]]),lwd=4, col='black',type='l')
+}
+
+# set path and device
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/plots/"
+pdf(paste0(path,"a5-qn-fc2-fail-apclust-5-matplots-mean-trend.pdf"), width=15, height=15)
+
+# set rows and columns
+par(mfrow = c(3,3))
+# run
+for (i in 1:length(unique(pdfco$ClusterID))) {
+  matplusmean(cl)
+}
+# save
+dev.off()
+
+
+# define function to draw matplot for each cluster with median trendline
+matplusmeds <- function(x) {
+  # x = list of peak matrices
+  matplot(t(x[[i]]),
+          type = 'l', col = niceCols[i],
+          xlab = 'Tissue Treg', ylab= 'log2 rpkm',
+             xlim=c(1,8),ylim=c(-2,9),xaxt='n')
+  # find median
+  med <- apply(x[[i]],2,median)
+  # label x axis
+  axis(1, at=1:8, labels=c('Cn','Cp','M','V','SCn','SCp','SM','SV'))
+  # add trendline
+  points(x = seq(1,8,by=1), y=med,lwd=4, col='black',type='l')
+}
+
+# set path and device
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/plots/"
+pdf(paste0(path,"a5-qn-fc2-fail-apclust-5-matplots-med-trend.pdf"), width=15, height=15)
+
+# set rows and columns
+par(mfrow = c(3,3))
+# run
+for (i in 1:length(unique(pdfco$ClusterID))) {
+  matplusmeds(cl)
+}
+# save
+dev.off()
+```
+<br>  
+
+
+
 #### HOLD -- Hclust on random samples generated from **QN normalized** set of all strong peaks
 ```{r hclust}
 # load list of peak sample matrices
@@ -714,8 +1201,6 @@ library(pheatmap)
 + attach clusterIDs to peaks in original df, heatmap, hc on columns/samples, sort by rows
 <br>
 ```{r apclust}
-library(apcluster)
-
 ##---- load peak samples -------------------------------------------------------------------------------------------
 
 # load list of peak sample matrices
@@ -736,6 +1221,7 @@ str(p10k)
 head(p10k)
 
 ##---- APcluster ------------------------------------------------------------------------------------------------
+library(apcluster)
 
 # find range of input prefs
 preferenceRange(negDistMat(r=2)(p10k))
@@ -767,6 +1253,10 @@ ap1 <- apclusterL(negDistMat(r=2), p10k, p=-700, frac = 0.1, sweeps = 5)
 # plot
 plot(ap1, p10k)
 heatmap(ap1)
+## testing
+s <- negDistMat(x=p10k, r=2, p=-700)
+mds <- cmdscale(s)
+
 
 ##---- append clusterID to peak signal values --------------------------------------------------------------------
 
@@ -817,8 +1307,7 @@ png(paste0(path,"a5-pheatmap-qn-apclust-16.png"), width=500, height=500)
 pheatmap(as.matrix(pdfco[3:10]), cluster_rows = F, color = niceCols)
 dev.off()
 
-## ---- ggplot heatmap on sample ----------------------------------------------------------------------------
-## -- this works -- ##
+## ---- ggplot heatmap on sample --------------------------------------------------------------------------------
 library(reshape2)
 library(ggplot2)
 # start with copy of pdfco 
@@ -842,27 +1331,27 @@ xm$value <- as.numeric(xm$value)
 ggplot(xm, aes(x=variable, y=peaksort)) + geom_tile(aes(fill=value)) +
 scale_fill_gradientn(colors = myPalette(100))
 
-### ----  can't make cluster bar at end have separate colors from value scale
+### ----  ?? can't make cluster bar at end have separate colors from value scale
 xm[[3]] <- gsub(xm[[3]], pattern = 'ClusterID', replacement = 'Z')
 ggplot(xm[xm$variable!='ClusterID',], aes(x=variable, y=peaksort)) + geom_tile(aes(fill=value)) +
   scale_fill_gradientn(colors = myPalette(100)) + 
   geom_tile(data = xm[xm$variable =='ClusterID',], aes(x=variable,y=peaksort,color=value)) + 
   scale_color_brewer(palette="Dark2")
 
-## can't get each cluster to be different color and map intensity to rpkm
-# this almost works
+### ---- ?? can't get each cluster to be different color and map intensity to rpkm
+# this could work with some tweaking
+# change the melt to keep Cluster ID as id.var
 xm <- melt(x, id.vars=c('PeakID','peaksort','ClusterID'), measure.vars=names(x[c(1:4,6)]))
 xm$value <- as.numeric(xm$value)
-ggplot(xm, aes(x=variable, y=peaksort, color=ClusterID)) + geom_tile(aes(fill=value)) +
-  theme_bw()
-# this could work with some tweaking
+
 ggplot(xm, aes(x=variable, y=peaksort)) + geom_tile(aes(fill=ClusterID, alpha=value)) + 
   scale_fill_brewer(palette='Spectral') + 
   scale_alpha_continuous(range=c(0.001,1)) +
   theme_bw()
 
 
-##---- matplots results across samples -------------------------------------------------------------------------
+
+## ---- matplots results across samples -------------------------------------------------------------------------
 
 # extract each cluster and combine into a list
 cl <- list() # [c]luster [l]ist
@@ -887,11 +1376,13 @@ niceCols <- eqSpect(n)
 # define function to draw matplot for each cluster with mean trendline
 matplusmean <- function(x) {
   # x = list of peak matrices
-  # draw matploots
+  # draw matplots
   matplot(t(x[[i]]),
           type = 'l', col = niceCols[i],
           xlab = 'Tissue Treg', ylab= 'log2 rpkm',
-             xlim=c(1,8),ylim=c(-2,9))
+             xlim=c(1,8),ylim=c(-2,9), xaxt='n')
+  # label x axis
+  axis(1, at=1:8, labels=c('Cn','Cp','M','V','SCn','SCp','SM','SV'))
   # draw trendline
   points(x = seq(1,8,by=1), y=colMeans(cl[[i]]),lwd=4, col='black',type='l')
 }
@@ -916,9 +1407,11 @@ matplusmeds <- function(x) {
   matplot(t(x[[i]]),
           type = 'l', col = niceCols[i],
           xlab = 'Tissue Treg', ylab= 'log2 rpkm',
-             xlim=c(1,8),ylim=c(-2,9))
+             xlim=c(1,8),ylim=c(-2,9),xaxt='n')
   # find median
   med <- apply(x[[i]],2,median)
+  # label x axis
+  axis(1, at=1:8, labels=c('Cn','Cp','M','V','SCn','SCp','SM','SV'))
   # add trendline
   points(x = seq(1,8,by=1), y=med,lwd=4, col='black',type='l')
 }
@@ -938,6 +1431,9 @@ dev.off()
 
 
 ## ---- tsne results of APclust OR other dim reduction ?? ------------------------------------------------------
+library(fpc)
+
+
 
 ```
 <br>    
