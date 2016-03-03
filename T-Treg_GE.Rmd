@@ -1,0 +1,78 @@
+---
+title: "T-Treg Gene Expression"
+author: "JRD"
+date: "March 3, 2016"
+output: html_document
+---
+
+last modified: `r Sys.Date()`
+<br>    
+
+#### README
++ this document contains code and explanation for an analysis of tissue-Treg gene expression signatures
+<br>    
+
+
+#### R Markdown Specifications
+Set global options
+```{r setoptions, echo=F}
+library(knitr)
+opts_chunk$set(echo=F, eval=F, warning=F, message=F)
+```
+<br>    
+
+Github
+https://github.com/jdis24/ATAC.git
+<br>    
+
+
+### Pseudo
+**divide murine genes into expressed or not in T-Tregs**
++ input = three .gct files from different lab members
++ `Fat-2wkMuscle.gct` - VAT, LN Treg from RB
++ `Gut-PancreasTregs.gct` - Rorc+, Rorc- colonic Treg, no spleens
++ `Dalia (July 23, 2010).gct` - 4d inj muscle, with spleen Treg
++ for each gct, collapse duplicates by median
++ merge gcts together by ProbeSetID
++ draw cv vs mean
++ divide into Treg expr vs non (mean >= 100, cv <= ?)
+
+
+#### Import gcts and collapse duplicate probes by median
+```{r gct_collapse, eval=T}
+# source cbdm common.R scripts
+source("/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/JRD.Scripts/CBDM_wiki_Rscripts/Common.R")
+
+# set path to wd
+path <- '/Volumes/JD_WD2/JRD_CBDMLab/JRD_CBDM_public_seqanalyses/Microarray/GCT_given/working'
+files <- list.files(path = path, pattern='*.gct', full.names=T)
+
+gctl <- lapply(files, read.gct) # [gctl]ist
+
+fn <- list.files(path = path, pattern='*.gct') # make filenames for each gct
+fn <- unlist(strsplit(x = fn, split = '.gct'))
+names(gctl) <- fn
+
+# collapse each gct by median expr value
+gctl.collapsed <- lapply(gctl, collapseDataset)
+
+# merge by ID, retain IDs present in all
+
+test <- 
+
+
+
+```
+<br> 
+
+
+
+
+
+
+
+
+
+
+
+
