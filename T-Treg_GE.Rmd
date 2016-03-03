@@ -37,6 +37,53 @@ https://github.com/jdis24/ATAC.git
 + draw cv vs mean
 + divide into Treg expr vs non (mean >= 100, cv <= ?)
 
+#### Functions
+```{r jrd_functions}
+# calculate stats over all numeric columns of df 
+row_stats <- function(df) {
+  nums <- sapply(df, is.numeric) # extract numeric cols of df
+  
+  df_nums <- df[,nums] # subset df by numeric cols
+  df_nums <- as.data.frame(apply(df_nums, 2, log,2)) # convert expression to log2
+  
+  stats <- transmute_(df_nums, 
+                      Mean = ~rowMeans(df_nums),
+                      SD = ~rowSds(as.matrix(df_nums)))
+  CV <- stats$SD / stats$Mean
+  
+  df_other <- df[!nums]     
+  cbind(df_other,stats,CV)
+}
+
+# calculate stats over any columns of df 
+row_stats2 <- function(df,v1,v2,v3) {
+  nums <- sapply(df, is.numeric) # extract numeric cols of df
+  
+  subset <- df[,v1:v3] # subset df by columns
+  
+  log2subset <- as.data.frame(apply(subset,2,log,2))
+    
+  means <- transmute_(subset,
+                      mean = ~rowMeans(subset),
+                      log2mean = ~log(rowMeans(subset),2),
+                      log10mean = ~log(rowMeans(subset),10))
+  meanlog2 <- transmute_(log2subset,
+                         meanlog2 = ~rowMeans(log2subset))
+  sd <- transmute_(subset,
+                      SD = ~rowSds(as.matrix(subset)))
+  sd2 <- transmute_(log2subset,
+                      SD = ~rowSds(as.matrix(log2subset)))
+  
+  cv <- sd$SD / means$mean
+  
+  cv2 <- sd2$SD / meanlog2$mean
+  
+  #df_other <- df[!nums]
+  cbind(df,means,meanlog2,cv,cv2)
+}
+```
+<br>  
+
 
 #### Import gcts and collapse duplicate probes by median
 ```{r gct_collapse, eval=T}
@@ -52,18 +99,161 @@ gctl <- lapply(files, read.gct) # [gctl]ist
 fn <- list.files(path = path, pattern='*.gct') # make filenames for each gct
 fn <- unlist(strsplit(x = fn, split = '.gct'))
 names(gctl) <- fn
+# look at colnames
+lapply(gctl, names)
 
 # collapse each gct by median expr value
 gctl.collapsed <- lapply(gctl, collapseDataset)
 
 # merge by ID, retain IDs present in all
+library(dplyr)
+# remove ID cols 
+gctl.collapsed <- lapply(gctl.collapsed, select, -matches("ID"))
+# check that it worked 
+lapply(gctl.collapsed, names)
+# merge
+gctl.joined1 <- inner_join(gctl.collapsed[[1]],gctl.collapsed[[2]], by = "GeneSymbol")
+gctl.joined2 <- inner_join(gctl.joined1, gctl.collapsed[[3]], by = "GeneSymbol")
+# check names
+names(gctl.joined2)
 
-test <- 
+# check expr values in joined match source
+gctl.joined2[gctl.joined2$GeneSymbol == "Pparg", colnames(gctl.joined2) =="B614wABDTconv#1"]
+gctl[[1]][gctl[[1]]$GeneSymbol == "Pparg", colnames(gctl[[1]]) == "B614wABDTconv#1"]
 
+# save the merged gct
+path <- '/Volumes/JD_WD2/JRD_CBDMLab/JRD_CBDM_public_seqanalyses/Microarray/GCT_given/working/'
+write.gct(gctl.joined2, filename = paste0(path,'ttreg_gctljoined.gct'))
 
+# remove cols don't want
+names(gctl.joined2)
+ttreg.gct <- gctl.joined2[,-c(2:43,50:55,62:70)]
+names(ttreg.gct)
+# need to re-order columns for colonic Tregs
+ttreg.gct <- ttreg.gct[,c(1:13,15,17,18,19,14,16,20)]
+names(ttreg.gct)
+
+# save the merged, truncated gct
+path <- '/Volumes/JD_WD2/JRD_CBDMLab/JRD_CBDM_public_seqanalyses/Microarray/GCT_given/working/'
+write.gct(ttreg.gct, filename = paste0(path,'ttreg_mus_spl_vat_cln.gct'))
+save(ttreg.gct, file=paste0(path,'ttreg_mus_spl_vat_cln.RDa'))
 
 ```
 <br> 
+
+
+#### Plot and filter by cv and expression
+```{r cv_mean}
+# load file
+load(paste0(path,'ttreg_mus_spl_vat_cln.RDa'))
+names(ttreg.gct)
+
+## -- compute and apppend stats --------------------------------------------------------------------------
+# agct = [a]ppend [gct]
+agct <- row_stats2(ttreg.gct, "2","3","4") 
+agct <- row_stats2(agct, "5","6","7")
+agct <- row_stats2(agct, "8","9","10")
+agct <- row_stats2(agct, "11","12","13")
+agct <- row_stats2(agct, "14","15","16","17") # changed function to handle 4 cols
+agct <- row_stats2(agct, "18","19","20") # changed back to 3
+
+# create column labels for sample stats
+stat.labels <- c("_mean","_log2mean","_log10mean","_meanlog2","_cv","_cv2")
+sample.names <- strsplit(names(ttreg.gct[-1]), split = "#")
+sample.names <- lapply(sample.names, function(x) x[[1]])
+sample.names <- unique(unlist(sample.names))
+
+statcol.names <- lapply(sample.names, paste, stat.labels, sep="")
+statcol.names <- unlist(statcol.names)
+
+names(agct) <- c(names(agct[1:20]), statcol.names)
+
+# save agct
+path <- '/Volumes/JD_WD2/JRD_CBDMLab/JRD_CBDM_public_seqanalyses/Microarray/GCT_given/working/'
+save(agct, file=paste0(path,'ttreg_mus_spl_vat_cln_agct.RDa'))
+
+
+## -- plot expr and cv distributions --------------------------------------------------------------------------
+library(reshape2)
+library(ggplot2)
+
+# make df of log10 expr for each gene in each sample
+l10names <- grep('log10mean$', names(agct))
+l10exp <- cbind(agct[1],agct[l10names]) # [l]og[10]exp = new df of log10 expr values
+l10expm <- melt(l10exp, id.vars=c('GeneSymbol')) #log10exp[m]elted
+
+# plot
+p <- ggplot(l10expm, aes(x=value))
+p + geom_histogram(fill="white",color="black", binwidth=0.1) + 
+  facet_grid(variable ~.) + 
+  geom_vline(xintercept = 2) +
+  xlab("log10 expr") + 
+  theme_bw()
+# save
+path <- '/Volumes/JD_WD2/JRD_CBDMLab/JRD_CBDM_public_seqanalyses/Microarray/GCT_given/working/plots/'
+ggsave(filename = paste0(path,"log10exp.pdf"), width=8, height=15)
+
+
+# make df of replicate cv2 (based on log2 expr values) for each gene in each sample
+cv2names <- grep("cv2$",names(agct))
+cv2cv <- cbind(agct[1],agct[cv2names]) # cv2cv = new df of cv2 values
+cv2cvm <- melt(cv2cv, id.vars=c("GeneSymbol"))
+
+# plot
+p <- ggplot(cv2cvm, aes(x=GeneSymbol,y=value))
+p + geom_point(size=0.1) + 
+  facet_grid(variable ~.) + 
+  theme_bw() + 
+  theme(axis.text.x = element_blank())
+# save
+path <- '/Volumes/JD_WD2/JRD_CBDMLab/JRD_CBDM_public_seqanalyses/Microarray/GCT_given/working/plots/'
+ggsave(filename=paste0(path,"cv2.png"),width=8,height=12)
+
+
+# make df of log10 expr vs cv2 for each sample
+l10cv2 <- cbind(agct[1],agct[l10names],agct[cv2names])
+names(l10cv2)
+
+# function for drawing plots 
+cv.mean.plot <- function(p,yi) {
+  p + geom_point(size=0.2) + 
+  geom_hline(yintercept=yi, color="red") + 
+  theme_bw() + 
+  annotate('text',x=1.5, y=0.3,label=paste('hline at ',yi,sep=""))
+}
+
+## if want to plot and save individual cv vs mean plots
+p <- ggplot(l10cv2, aes(x=TR.4dINJ.Mu_log10mean,y=TR.4dINJ.Mu_cv2))
+cv.mean.plot(p, 0.06)
+ggsave(filename=paste0(path,"muscle.cv.mean.pdf"),width=4,height=4)
+
+## if want to plot and save in single image
+l10cv2.plot <- l10cv2 # make a copy for melting
+samples <- c("Mus.d4","SplwMus.d4","VAT.RB", "LNwVAT.RB","Cln.Rorcneg","Cln.Rorcpos")
+names(l10cv2.plot) <- c('GeneSymbol',samples,samples)
+
+df1 <- melt(l10cv2.plot[1:7], id.vars='GeneSymbol', variable.name= 'Sample', value.name ='Mean')
+df2 <- melt(l10cv2.plot[c(1,8:13)], id.vars='GeneSymbol', variable.name= 'Sample', value.name ='cv2')
+l10cv2.plot <- cbind(df1,df2[3])
+
+yi <- 0.06 # set height of horiz line
+
+# plot across all samples
+p <- ggplot(l10cv2.plot, aes(x=Mean,y=cv2))
+p + geom_point(size=0.2) + 
+  geom_hline(yintercept=0.06, color="red") + 
+  theme_bw() + 
+  facet_grid(.~Sample) +
+  ylim(0,0.4) + 
+  ggtitle(paste('log10 expr vs cv(based on log2 expr)', 'hline = ', yi))
+  
+# save
+path <- '/Volumes/JD_WD2/JRD_CBDMLab/JRD_CBDM_public_seqanalyses/Microarray/GCT_given/working/plots/'
+ggsave(filename = paste0(path,'log10cv2.pdf'), width=10, height=8)
+
+
+```
+
 
 
 
