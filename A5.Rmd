@@ -47,7 +47,14 @@ https://github.com/jdis24/ATAC.git
 + using matrix of log2 rpkm values: 
 + test for any outliers (very high or low rpkm in all samples?)
 + start with hclust on random sample of peaks - sample size? 
-++ can I use hc results as initial centroids for Kmeans?
++ can I use hc results as initial centroids for Kmeans?
++ run same matrix through APcluster
+**clustering by hand**
++ start with log2 rpkm matrix of replicate averages
++ iterate following steps over each t-Treg population:
++ what fraction of total t-Treg peaks are present?
++ of those, how many are shared with 0,1,2,3,4,5,6,7,or 8 other t-Treg populations
++ then, for each of these "clusters", perform unsupervised hc/Km/other to find sub-patterns
 <br>    
 
 
@@ -735,6 +742,7 @@ niceCols <- rev(brewer.pal(11, 'Spectral'))
 
 #### APclust on variable peaks after scaling all rows between 0 and 1
 + currently doing this on orchestra R
++ so far this doesn't improve clustering over no scale
 ```{r apclust_normd_varpeaks}
 ## ---- load peak samples -----------------------------------------------------------------------------------------
 #path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Ana#lyses/A5-all-ttreg/2rpm-filtered/RDa/" # set data path
@@ -1546,10 +1554,110 @@ pheatmap(as.matrix(ar[2:9]), cluster_rows = F, color = niceCols, annotation_row 
 
 #### Annotation of differential peaks in ChIPseeker
 ```{r annot_varpeaks}
-# load files
+##---- load libraries and peak clusters --------------------------------------------------------------------------
+
+# install mm9 transcript db
+source("http://bioconductor.org/biocLite.R")
+biocLite("BSgenome.Mmusculus.UCSC.mm9")
+
+# load libraries
+library(TxDb.Mmusculus.UCSC.mm9.knownGene)
+library(ChIPseeker)
+
+# load files for specific clusters
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/bed/"
+files <- list.files(path = path, pattern='pass-apclust[5-7].bed.txt', full.names=T )
+
+# get promoters 
+txdb <- TxDb.Mmusculus.UCSC.mm9.knownGene
+proms <- getPromoters(TxDb = txdb, upstream = 1000, downstream = 1000)
+
+# make a list of peak (aka "tag" in this package) list
+pfl <- lapply(files, readPeakFile) #[p]eak[f]ile[l]ist
+
+# name list elements
+names <- list.files(path = path, pattern='pass-apclust[5-7].bed.txt')
+names1 <- sub(pattern = '^a5-ttreg-2rpm-fil-qn-fc2-pass-*(\\w+)*.bed.txt', replacement = '\\1',names)
+names(pfl) <- names1
+
+# make tag matrix list around promos
+tml.proms <- lapply(pfl, getTagMatrix, windows = proms) #[t]ag[m]atrix[l]ist[prom]oter[s]
+
+# plot peak profiles around TSS
+plotAvgProf(tml.proms, xlim=c(-1000,1000), facet='row')
+
+# annotate peaks with genomic features
+library('org.Mm.eg.db')
+peakAnnot <- lapply(pfl, annotatePeak,tssRegion=c(-1000,1000),
+                         TxDb=txdb, annoDb ="org.Mm.eg.db")
+
+# draw genomic feature plots
+plotAnnoBar(peakAnnot)
+plotDistToTSS(peakAnnot)
+
+# functional enrichments
+library(clusterProfiler)
+genes <- lapply(peakAnnot, function(i) as.data.frame(i)$geneId) # define genes
+#names(genes) <- sub("_","\n",names(genes))
+
+# need to fix so organism is mouse
+comp.MF <- compareCluster(geneClusters = genes[[1]], 
+                          fun = 'enrichGO',
+                          ont = 'MF',
+                          pvalueCutoff = 0.05,
+                          pAdjustMethod = "BH")
 
 ```
 <br>  
+
+
+#### Clustering by hand
++ start with log2 rpkm matrix of replicate averages
++ iterate following steps over each t-Treg population:
++ what fraction of total t-Treg peaks are present?
++ of those, how many are shared with 0,1,2,3,4,5,6,7,or 8 other t-Treg populations
++ then, for each of these "clusters", perform unsupervised hc/Km/other to find sub-patterns
+```{r clust_by_hand}
+## ----- load count data -----------------------------------------------------------------------------------------
+
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/RDa/"
+filename <- 'a5-ttreg-2rpm-filtered-rep-avg-counts-log2-rpkm-qn.RDa'
+load(paste0(path,filename))
+
+## -----look at distributions -------------------------------------------------------------------------------------
+str(ttr.avg.l2)
+summary(ttr.avg.l2[6:13])
+
+# boxplot
+par(oma = c(4,1,0.5,1))
+boxplot(ttr.avg.l2[6:13], las=2, cex.axis=0.7, ylab='log2 rpkm',
+        main=paste('merged atac peaks','n=',nrow(ttr.avg.l2)))
+
+# histograms
+library(reshape2)
+library(ggplot2)
+# get data into shape for ggplot
+ttr.melt <- melt(ttr.avg.l2, id.vars=c('CHR','START','END','PeakID','Strand'), variable.name = 'SampleID',
+                 value.name = 'log2_rpkm')
+head(ttr.melt)
+tail(ttr.melt)
+
+g <- ggplot(data = ttr.melt, aes(x=log2_rpkm))
+g + geom_histogram(fill="white",color="black",binwidth=0.1) +
+  facet_grid(SampleID~.) +
+  scale_x_continuous(limits=c(-4, 12), breaks=seq(-4,12,by=1)) +
+  geom_vline(xintercept =log(1,2)) +
+   geom_vline(xintercept = log(2,2)) +
+  geom_vline(xintercept = log(3,2)) +
+  theme_bw()
+
+# ggsave(paste0(path, "a5-count-hist.pdf"), width=5, height=25)
+
+
+# need to figure out threshold based on genome browser
+
+```
+<br>    
 
 
 #### HOLD -- Hclust on random samples generated from **QN normalized** set of all strong peaks
