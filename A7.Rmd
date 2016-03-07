@@ -1,0 +1,135 @@
+---
+title: "A7-all-ttreg"
+author: "JRD"
+date: "March 7, 2016"
+output: html_document
+---
+
+last modified: `r Sys.Date()`
+<br>    
+
+#### README
++ this document contains code and explanation for an analysis comparing Colon, Muscle, Splenic and VAT Treg
++ for details on how the input files used in this analysis were generated, see *ATAC_mapping.Rmd* and *ATAC_peaks.Rmd*
++ **difference between A5 and A6 is latter filters peaks by both min signal and replicate CV**
+<br>    
+
+
+#### R Markdown Specifications
+Set global options
+```{r setoptions, echo=F}
+library(knitr)
+opts_chunk$set(echo=F, eval=F, warning=F, message=F)
+```
+<br>    
+
+Github
+https://github.com/jdis24/ATAC.git
+<br>    
+
+
+#### Pseudo
+**call peaks and get read counts**
++ [these steps were done in "ATAC_peaks.Rmd"]
++ for each sample, call peaks in each replicate
++ then merge into single peakset
++ for each replicate, count reads in each peak, normalized to total library size
++ export .csv files of peaks and counts
+**filter for strong peaks with low variance, merge peaks and get read counts for merged peaks**
++ [all subsequent steps done in this document]
++ plot distributions of read counts 
++ plot **mean vs replicate cv** of read counts for each sample 
++ filter for strong peaks (start with >=2.5 rpm) with low cv (?)
++ **check that filters worked on genome browser**
++ get genomic annotations of confident strong peaks (compare to unfilterd to check degree of TSS enrichment)
++ use DiffBind to create merged peakset across all T-treg and get read counts
++ export all peaks and their rpkm score in each sample 
+<br>  
+
+
+#### Import peak files into peak list and export bed files
+```{r peak_list, eval=T}
+# create path to .csv files  
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Master_peaks/R/peaks_with_counts/working/"
+
+# get filenames
+filenames1 <- list.files(path = path, pattern = ".csv")
+filenames <- paste(path, filenames1, sep="") # update filenames with path
+
+# combine peak table .csv dfs into a list
+colClass <- c(rep("factor",2), rep("numeric",3), "character", rep("numeric",4)) # set column classes
+pl <- lapply(filenames, read.csv, colClasses = colClass) # [p]eak [l]ist
+
+# name the list elements to match the files
+names(pl) <- gsub("\\.csv", "", filenames1)
+
+# convert each df to bed format
+pl_bed <- lapply(pl, function(x) {
+  x <- x[,c("seqnames","start","end")]
+})
+
+# export each df as tdt bed file
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A7-all-ttreg/bed/"
+
+lapply(names(pl_bed),
+       function(x) write.table(pl_bed[x], file=paste(paste0(path,x),"bed",sep="."), sep = "\t", 
+                              quote=F, row.names=F,col.names=c("#chr","start","end")))
+```
+<br>    
+
+
+#### Generate table of peak numbers for range of rpm threshold values
+```{r threshold_table, eval=T, results="asis"}
+library(xtable)
+
+# function to compute the number of peaks >=n rpm in each sample
+# ARGS: df = dataframe of peak height rpms, peak_height_var = string of var name storing rpm values, cutoffs = numeric vector of rpm cutoffs 
+# USAGE: number_peaks_above_nrpm(df, "peak_height_var", cutoffs)
+number_peaks_above_nrpm <- function(df, rpm_var, cutoffs) { 
+  # create indexing vector representing number of elements in cutoffs
+  n <- length(cutoffs) 
+  # create output vector whose length = length of cutoffs
+  o <- numeric(n) 
+  # create variable to store vector of extracted rpm values
+  rpm <- df[[rpm_var]]
+  # loop over each element of cutoffs and count number rows where peak height >= that element
+  for(i in 1:n) { 
+    o[i] <- as.numeric(sum(rpm >= cutoffs[[i]])) # calculate the total number of rows where rpm >= ith value in cutoffs  
+  }
+  # print output vector
+  return(o) 
+}
+
+
+# create cutoff vector of rpm values
+cutoffs <- c(seq(0,5,by=0.5))
+
+# apply cutoffs to list
+peaks_pass_filter <- sapply(pl, number_peaks_above_nrpm, "rpm", cutoffs)
+
+# transform list into dataframe 
+ppf <- as.data.frame(peaks_pass_filter) #[p]eaks [p]ass [f]ilter
+ppf <- cbind(ppf,"rpm_cutoff" = cutoffs) # add column for each cutoff
+
+# write to file
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A7-all-ttreg/"
+write.csv(ppf, file = paste0(path,"peak_totals_rpm_filtered.csv"), row.names=F)
+
+# generate xtable
+print(xtable(ppf), type="html", include.rownames=F)
+
+# plot distributions of total peaks called at each cutoff
+library(reshape2)
+library(ggplot2)
+
+ppfm <- melt(ppf, id.vars='rpm_cutoff',variable.name='no_peaks') # ppf[m]elted 
+g <- ggplot(ppfm, aes(x=as.factor(rpm_cutoff),y=value))
+g + geom_boxplot() +
+  theme_bw()
+ggsave(paste0(path, "a5-peakcut-boxplot.pdf"), width=7, height=5) # export pdf
+```
+<br>    
+
+
+
+
