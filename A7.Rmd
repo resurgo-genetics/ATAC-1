@@ -11,7 +11,7 @@ last modified: `r Sys.Date()`
 #### README
 + this document contains code and explanation for an analysis comparing Colon, Muscle, Splenic and VAT Treg
 + for details on how the input files used in this analysis were generated, see *ATAC_mapping.Rmd* and *ATAC_peaks.Rmd*
-+ **difference between A5 and A6 is latter filters peaks by both min signal and replicate CV**
++ **difference between A5 and A7 is latter filters peaks by both min signal and replicate CV**
 <br>    
 
 
@@ -30,6 +30,39 @@ https://github.com/jdis24/ATAC.git
 
 #### JD's stat calculation functions
 ```{r stat_fxns}
+# function to compute the number of peaks >=n rpm in each sample
+# ARGS: df = dataframe of peak height rpms, peak_height_var = string of var name storing rpm values, cutoffs = numeric vector of rpm cutoffs 
+# USAGE: number_peaks_above_nrpm(df, "peak_height_var", cutoffs)
+number_peaks_above_nrpm <- function(df, rpm_var, cutoffs) { 
+  # create indexing vector representing number of elements in cutoffs
+  n <- length(cutoffs) 
+  # create output vector whose length = length of cutoffs
+  o <- numeric(n) 
+  # create variable to store vector of extracted rpm values
+  rpm <- df[[rpm_var]]
+  # loop over each element of cutoffs and count number rows where peak height >= that element
+  for(i in 1:n) { 
+    o[i] <- as.numeric(sum(rpm >= cutoffs[[i]])) # calculate the total number of rows where rpm >= ith value in cutoffs  
+  }
+  # print output vector
+  return(o) 
+}
+
+
+# define function to filter peaks and draw boxplot
+# ARGS: df = df containing peak rpm values, colname == 'rpm'
+#       n = rpm threshold
+bp_nrpm <- function(df, n) {
+  df %>%
+    filter(rpm >= n) %>% # filter by rpm cutoff 
+    ggplot(aes(x=Sample, y=log2_rpm, fill=Sample)) + # plot
+    geom_boxplot(varwidth=T) +
+    ylim(-2,10) +
+    theme_bw() + 
+    theme(axis.title.x = element_blank())
+}
+
+
 # calculate stats over all numeric columns of df 
 row_stats <- function(df) {
   nums <- sapply(df, is.numeric) # extract numeric cols of df
@@ -78,25 +111,120 @@ row_stats2 <- function(df,v1,v2) {
 <br>  
 
 
+#### JDs plotting functions
+```{r plotting_fxns}
+library(GGally)
+jd_ggscatmat <- function(data, columns = 1:ncol(data), color = NULL, ...) {
+  data.choose <- data[, columns]
+  dn <- data.choose[sapply(data.choose, is.numeric)]
+  if (ncol(dn) < 2) {
+    stop("Not enough numeric variables to make a scatter plot matrix")
+  }
+  if (ncol(dn) == 0) 
+    stop("All of your variables are factors. Need numeric variables to make scatterplot matrix.")
+  a <- uppertriangle(data, columns = columns, color = color)
+  if (is.null(color)) {
+    plot <- jd_scatmat(data, columns = columns) + geom_text(data = a, 
+                                                         aes_string(label = "r"), colour = "black")
+  }
+  else {
+    plot <- jd_scatmat(data, columns = columns, color = color) + 
+      geom_text(data = a, aes_string(label = "r", color = "colorcolumn")) + 
+      labs(color = color)
+  }
+  factor <- data.choose[sapply(data.choose, is.factor)]
+  if (ncol(factor) == 0) {
+    return(plot)
+  }
+  else {
+    warning("Factor variables are omitted in plot")
+    return(plot)
+  }
+}
+
+# draw scatterplot matrix
+jd_scatmat <- function (data, columns = 1:ncol(data), color = NULL) 
+{
+  data.choose <- data[, columns]
+  dn <- data.choose[sapply(data.choose, is.numeric)]
+  if (ncol(dn) == 0) {
+    stop("All of your variables are factors. Need numeric variables to make scatterplot matrix.")
+  }
+  else {
+    ltdata.new <- lowertriangle(data, columns = columns, 
+                                color = color)
+    r <- ggplot(ltdata.new, mapping = aes_string(x = "xvalue", 
+                                                 y = "yvalue")) + theme(axis.title.x = element_blank(), 
+                                                                        axis.title.y = element_blank()) + facet_grid(ylab ~ 
+                                                                                                                       xlab, scales = "free") + theme(aspect.ratio = 1)
+    if (is.null(color)) {
+      densities <- do.call("rbind", lapply(1:ncol(dn), 
+                                           function(i) {
+                                             data.frame(xlab = names(dn)[i], ylab = names(dn)[i], 
+                                                        x = dn[, i])
+                                           }))
+      for (m in 1:ncol(dn)) {
+        j <- subset(densities, xlab == names(dn)[m])
+        r <- r + stat_density(aes(x = x, y = ..scaled.. * 
+                                    diff(range(x)) + min(x)), data = j, position = "identity", 
+                              geom = "line", color = "black")
+      }
+      r <- r + geom_point(na.rm = TRUE, size=0.5, color="dark green") + guides(fill=guide_legend(reverse=TRUE))
+      return(r)
+    }
+    else {
+      densities <- do.call("rbind", lapply(1:ncol(dn), 
+                                           function(i) {
+                                             data.frame(xlab = names(dn)[i], ylab = names(dn)[i], 
+                                                        x = dn[, i], colorcolumn = data[, which(colnames(data) == 
+                                                                                                  color)])
+                                           }))
+      for (m in 1:ncol(dn)) {
+        j <- subset(densities, xlab == names(dn)[m])
+        r <- r + stat_density(aes_string(x = "x", y = "..scaled.. * diff(range(x)) + min(x)", 
+                                         colour = "colorcolumn"), data = j, position = "identity", 
+                              geom = "line")
+      }
+      r <- r + geom_point(data = ltdata.new, aes_string(colour = "colorcolumn"), 
+                          na.rm = TRUE, size=0.5, color="dark green") +
+        guides(fill=guide_legend(reverse=TRUE))
+      return(r)
+    }
+  }
+}
+
+```
+<br>  
+
 
 #### Pseudo
 **call peaks and get read counts**
 + [these steps were done in "ATAC_peaks.Rmd"]
-+ for each sample, call peaks in each replicate
-+ then merge into single peakset
-+ for each replicate, count reads in each peak, normalized to total library size
++ for each sample, call peaks in each replicate (homer)
++ then merge into single peakset (homer)
++ for each replicate, count reads in each peak, normalized to total library size (ChIPQC)
 + export .csv files of peaks and counts
-**filter for strong peaks, merge peaks and get read counts for merged peaks**
 + [all subsequent steps done in this document]
+**import peak files into peak list and export bed files**
++ import peaks and rpm-normalized counts from chipqc output
+**generate table of peak numbers for range of rpm threshold values**
++ write function to compute number of peaks after applying a series of rpm cutoffs
++ boxplot each rpm cutoff
+**plot distributions of read counts for each sample**
++ histograms
++ boxplots
++ before and after setting n rpm cutoff (start with >= 1rpm)
+**filter for strong peaks**
 + plot distributions of read counts 
-+ filter for strong peaks (start with >=2.5 rpm) 
-+ filter for peaks with 
-+ get genomic annotations of confident strong peaks (compare to unfilterd to check degree of TSS enrichment)
-
-**merge and get read counts for merged peaks**
-+ use DiffBind to create merged peakset across all T-treg and get read counts
++ for different rpm values, examine peak shapes on browser from .bigwig files
++ filter for strong peaks (start with >=1 rpm) 
+**TO DO: get genomic annotations of confident strong peaks** 
+(compare to unfilterd to check degree of TSS enrichment)
+**create merged peakset and get read counts for merged peaks**
++ use DiffBind to create merged peakset across all T-treg and to get read counts
 + export all peaks and their rpkm score in each sample 
-**filter for peaks with low cv**
+**filter peaks by replicate CV**
++ import merged peakset with rpkm scores for each sample from DiffBind output
 + plot replicate rpkm values as scatter plots
 + plot mean vs cv for each set of replicates
 + use distributions to choose cv cutoff
@@ -148,25 +276,6 @@ lapply(names(pl_bed),
 ```{r threshold_table, eval=T, results="asis"}
 library(xtable)
 
-# function to compute the number of peaks >=n rpm in each sample
-# ARGS: df = dataframe of peak height rpms, peak_height_var = string of var name storing rpm values, cutoffs = numeric vector of rpm cutoffs 
-# USAGE: number_peaks_above_nrpm(df, "peak_height_var", cutoffs)
-number_peaks_above_nrpm <- function(df, rpm_var, cutoffs) { 
-  # create indexing vector representing number of elements in cutoffs
-  n <- length(cutoffs) 
-  # create output vector whose length = length of cutoffs
-  o <- numeric(n) 
-  # create variable to store vector of extracted rpm values
-  rpm <- df[[rpm_var]]
-  # loop over each element of cutoffs and count number rows where peak height >= that element
-  for(i in 1:n) { 
-    o[i] <- as.numeric(sum(rpm >= cutoffs[[i]])) # calculate the total number of rows where rpm >= ith value in cutoffs  
-  }
-  # print output vector
-  return(o) 
-}
-
-
 # create cutoff vector of rpm values
 cutoffs <- c(seq(0,5,by=0.5))
 
@@ -199,9 +308,13 @@ ggsave(paste0(path, "a7-peakcut-boxplot.pdf"), width=7, height=5) # export pdf
 
 #### Plot distribution of read counts for each sample
 ```{r plots, eval=T}
+##----- load libraries ----------------------------------------------------------------------------------------------
 library(reshape2)
 library(ggplot2)
 library(dplyr)
+
+##----- get peak list into shape for ggplot -------------------------------------------------------------------------
+
 # set path for plots 
 path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A7-all-ttreg/plots/"
 
@@ -212,9 +325,12 @@ plm$L1 <- NULL # remove extraneous column
 # calculcate log2 rpm values and append as new column
 plm$log2_rpm <- log(plm$rpm, 2)
 
+##----- find and filter out peaks where rpm =0 ---------------------------------------------------------------------
+
 # show number of peaks where rpm =0 
 rpm0pks <- plm$log2_rpm == "-Inf"
 plm_rpm0pks <- plm[rpm0pks,]
+nrow(plm_rpm0pks) # total pks rpm = 0
 
 print("Peaks where rpm =0 ...") 
 xtable(plm_rpm0pks)
@@ -222,7 +338,9 @@ xtable(plm_rpm0pks)
 # filter out peaks where rpm = 0
 plmf <- plm[!rpm0pks,]  #plm[f]iltered
 
-# draw boxplot of all peaks in each sample
+##----- draw boxplots before rpm filter -------------------------------------------------------------------------
+
+# draw boxplots of all peaks in each sample
 g <- ggplot(data = plmf, aes(x=Sample, y=log2_rpm, fill=Sample))
 g + geom_boxplot(varwidth =T) +
   theme_bw() + 
@@ -242,7 +360,9 @@ bp_nrpm <- function(df, n) {
     theme(axis.title.x = element_blank())
 }
 
-n <- 2 # set rpm cutoff
+##----- draw boxplots post rpm filter -------------------------------------------------------------------------------
+
+n <- 1 # set rpm cutoff
 bp_nrpm(plmf, n) # draw plot
 ggsave(paste0(path,"a7-boxplot-",n,"rpm-filtered.pdf"), width =7, height =5) # export pdf
 
@@ -263,22 +383,24 @@ ggsave(paste0(path, "a7-count-hist.pdf"), width=5, height=25)
 ```{r filter_peaks, eval=T}
 library(dplyr)
 # select peaks >= nrpm
-n <- 2
+n <- 1
 sp <- lapply(pl, filter, rpm >=n) #[s]trong[p]eaks
 
-# export each df as .csv file
-path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A7-all-ttreg/csv/"
+##----- export each filtered peakset as .csv file ------------------------------------------------------------------
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A7-all-ttreg/1rpm-filtered/csv/"
 suffix <- paste(n,'rpm','.csv',sep="")
 lapply(names(sp),
        function(x) write.csv(sp[[x]], file=paste(path,x,'-',suffix,sep=""), row.names=F))
 
+
+##----- export each filtered peakset as bed file ------------------------------------------------------------------
 # convert each df to bed format
 spbed <- lapply(sp, function(x) {
   x <- x[,c("seqnames","start","end")]
 })
 
 # export each df as tdt bed file
-path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A7-all-ttreg/2rpm-filtered/bed/"
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A7-all-ttreg/1rpm-filtered/bed/"
 
 suffix <- paste(n, 'rpm','.bed',sep="")
 lapply(names(spbed),
@@ -303,20 +425,20 @@ annotatePeaks.pl <filenmame>.bed mm9 -annStats <filenmame>.annStats.txt > <filen
 #### Create merged peak set and get normalized read counts 
 + DiffBind 
 + Used R 3.2.1 on Orchestra so didn't have to keep .bam locally
-+ script called `a5.db.counts.R`
++ script called `a7.db.counts.R`
 + run with:
 `module load stats/R/3.2.1`
-`bsub -q priority -W 5:00 -R "rusage[mem=64000]" Rscript a5.db.counts.R`
+`bsub -q priority -W 5:00 -R "rusage[mem=64000]" Rscript a7.db.counts.R`
 ```{r merge_and_count}
 library(DiffBind)
 
 ##----- create sample sheet --------------------------------------------------------------------------------
 path <- "/groups/cbdm-db/jrd26/ATAC_crossbatch/R/Analysis7/"
 
-Peaks <- list.files(paste0(path, "bed/2rpm-filtered/"))
+Peaks <- list.files(paste0(path, "bed/1rpm-filtered/"))
 
 # create columns for sample sheet
-SampleID <- unlist(strsplit(Peaks, split = "-2rpm.bed"))
+SampleID <- unlist(strsplit(Peaks, split = "-1rpm.bed"))
 Tissue <- c(rep('Colon',4),rep('Muscle',2),rep('Spleen',8),rep("VAT",2))
 Factor <- unlist(strsplit(SampleID, split = "_rep1.2"))
 Factor <- unlist(strsplit(Factor, split = "_rep1"))
@@ -328,7 +450,7 @@ Treatment <- c('Batch1.2','Batch2','Batch1.2','Batch2',rep('Batch2',2),'Batch1',
 Replicate <- rep(c('1','2'),8)
 PeakCaller <- "homer"
 PeakFormat <- "bed"
-PeakPath <- list.files(paste0(path, "bed/2rpm-filtered/"), full.names = T)
+PeakPath <- list.files(paste0(path, "bed/1rpm-filtered/"), full.names = T)
 
 path2 <- "/groups/cbdm-db/jrd26/ATAC_crossbatch/R/"
 bamPath <- list.files(paste0(path2,"reads/"), full.names=T)
@@ -357,12 +479,12 @@ ttreg <- dba.peakset(ttreg, consensus = DBA_FACTOR)
 ttreg <- dba.count(ttreg, peaks = ttreg$masks$Consensus, score = DBA_SCORE_RPKM)
 
 # save dba to file
-n <- 2  # save rpm filter value
+n <- 1  # save rpm filter value
 dba.save(ttreg, file=paste0("a7-ttreg",n,'rpm-filtered'), dir=path, pre="dba_", ext="RData", bMinimize=F)
 
 # export consensus peakset with read counts
 # set filter
-n <- 2
+n <- 1
 suffix <- paste('a7-ttreg-consensus-',n,'rpm-filtered-rpkm',sep="")
 ttreg_con <- dba.peakset(ttreg, ttreg$masks$Consensus, bRetrieve = T, 
                          writeFile=paste0(path,suffix,'.txt'), DataType=DBA_DATA_FRAME)
@@ -401,22 +523,22 @@ dev.off()
 ```{r cv_filter}
 
 ##--- import peak file with normalized counts -------------------------------------------------------------
-path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A7-all-ttreg/2rpm-filtered/csv/"
-ttreg <- read.csv(file = paste(path,'a7-ttreg-consensus-2rpm-filtered-rpkm.csv',sep=""), header =T)
-
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A7-all-ttreg/1rpm-filtered/csv/"
+ttreg <- read.csv(file = paste(path,'a7-ttreg-consensus-1rpm-filtered-rpkm.csv',sep=""), header =T)
+summary(ttreg)
 
 ##----plot read count distributions after merge -------------------------------------------------------------
 # set plots path
-path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A7-all-ttreg/2rpm-filtered/plots/"
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A7-all-ttreg/1rpm-filtered/plots/"
 
 # set file suffix
-n <-2
+n <-1
 suffix <- paste0('a7-ttreg-', n,'rpm-filtered-merged-counts-rpkm')
 
 # plot and save
 pdf(paste0(path,suffix,'.pdf'), width=8, height=6)
 par(oma = c(4,1,0.5,1))
-h <- 4 # set height of horizontal line
+h <- 2 # set height of horizontal line
 boxplot(log(ttreg[4:19],2), las = 2, cex.axis = 0.7, 
         ylab='log2 rpkm', 
         main=paste('merged atac peaks ','n=',nrow(ttreg),'; abline rpm=',h,sep=""))
@@ -428,8 +550,8 @@ dev.off()
 peakName <- paste('peak_', 1:nrow(ttreg),sep="")
 ttreg <- cbind(PeakID = peakName, ttreg)
 # export 
-path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A7-all-ttreg/2rpm-filtered/csv/"
-write.csv(ttreg, file = paste(path,'a7-ttreg-consensus-2rpm-filtered-rpkm-named.csv',sep=""), row.names=F)
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A7-all-ttreg/1rpm-filtered/csv/"
+write.csv(ttreg, file = paste(path,'a7-ttreg-consensus-',n,'rpm-filtered-rpkm-named.csv',sep=""), row.names=F)
 
 
 ##---- apply row stats functions to each sample ----------------------------------------------------------------
@@ -437,53 +559,56 @@ names(ttreg) # view column names
 
 # create new df for each sample's stats
 library(dplyr)
-Cln_Nrp1n <- row_stats2(ttreg, "5","6")
-Cln_Nrp1p <- row_stats2(ttreg, "7","8")
-Mus <- row_stats2(ttreg, "9","10")
-Spl_wCln_Nrp1n <- row_stats2(ttreg, "11","12")
-Spl_wCln_Nrp1p <- row_stats2(ttreg, "13","14")
-Spl_wMus <- row_stats2(ttreg,"15","16")
-Spl_wVat <- row_stats2(ttreg,"17","18")
-Vat <- row_stats2(ttreg, "19","20")
+Cln_Nrp1n <- row_stats2(ttreg, "6","7")
+Cln_Nrp1p <- row_stats2(ttreg, "8","9")
+Mus <- row_stats2(ttreg, "10","11")
+Spl_wCln_Nrp1n <- row_stats2(ttreg, "12","13")
+Spl_wCln_Nrp1p <- row_stats2(ttreg, "14","15")
+Spl_wMus <- row_stats2(ttreg,"16","17")
+Spl_wVat <- row_stats2(ttreg,"18","19")
+Vat <- row_stats2(ttreg, "20","21")
 
 # combine the dfs into a list
-stat.list <- list(Cln_Nrp1n, Cln_Nrp1p, Mus, Vat, Spl_wCln_Nrp1n, Spl_wCln_Nrp1p, Spl_wMus, Spl_wVat)
+psl <- list(Cln_Nrp1n, Cln_Nrp1p, Mus, Vat, Spl_wCln_Nrp1n, Spl_wCln_Nrp1p, Spl_wMus, Spl_wVat) #[p]eak[s]tat[l]ist
 # name each element of the list
-list.names <- c('Cln_Nrp1n', 'Cln_Nrp1p', 'Mus', 'Vat', 'Spl_wCln_Nrp1n', 'Spl_wCln_Nrp1p', 
+psl.names <- c('Cln_Nrp1n', 'Cln_Nrp1p', 'Mus', 'Vat', 'Spl_wCln_Nrp1n', 'Spl_wCln_Nrp1p', 
                 'Spl_wMus', 'Spl_wVat') 
-names(stat.list) <- list.names
+names(psl) <- psl.names
+names(psl) # check
 
 # rename the columns of each df
-stat_names <- c('PeakID','Rep1_rpkm', 'Rep2_rpkm','Mean','Log2_mean', 'Log10_mean', 'Mean_of_log2',
-                'CV','CV_of_log2')
+stat_names <- c('PeakID','Rep1_rpkm', 'Rep2_rpkm','Mean','log2_mean', 'log10_mean', 'Mean_of_log2_rpkm',
+                'CV','CV_of_log2_rpkm')
 
-for (i in seq_along(stat.list)) {
-  colnames(stat.list[[i]]) <- stat_names
+for (i in seq_along(psl)) {
+  colnames(psl[[i]]) <- stat_names
 }
 # check 
-head(stat.list[[1]])
+head(psl[[1]])
 
 # create sample IDs
-samples <- as.list(list.names)
+samples <- as.list(psl.names)
 sampleID <- lapply(samples, function(x) {rep(x,nrow(ttreg))})
 # append sampleID to each df
 ttreg.stats <- list()
-for (i in 1:length(stat.list)) {
-  ttreg.stats[[i]] <- cbind(SampleID = sampleID[[i]], stat.list[[i]])
+for (i in 1:length(psl)) {
+  ttreg.stats[[i]] <- cbind(SampleID = sampleID[[i]], psl[[i]])
 }
 # name list elements
-names(ttreg.stats) <- list.names
+names(ttreg.stats) <- psl.names
 
-# look over 
-head(ttreg.stats[[1]])
-head(ttreg.stats[[8]])
+# check
+lapply(ttreg.stats, head)
 
 
 ##----plot replicate mean and cvs --------------------------------------------------------------------------------
 library(reshape2)
 library(ggplot2)
+
 # set plots path
-path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A7-all-ttreg/2rpm-filtered/plots/"
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A7-all-ttreg/1rpm-filtered/plots/"
+# set rpm filter for file suffix
+n <- 1
 
 # get into shape for ggplot
 slm <- melt(ttreg.stats, id.vars = colnames(ttreg.stats[[1]])) #[s]tat[l]ist[m]elted
@@ -494,75 +619,93 @@ p <- ggplot(slm, aes(x=log(Rep1_rpkm,2),y=log(Rep2_rpkm,2)))
 p + geom_point(size= 0.7, shape = 1, alpha=0.6) +
   facet_wrap(~SampleID) + 
   theme_bw()
-ggsave(paste0(path,'a7-rep-scatter-prefilter.png'), width=8, height=8)
+ggsave(paste(path,'a7-',n,'rpm-rep-scatter-prefilter.png',sep=""), width=8, height=8)
 
 # plot mean vs cv
-p <- ggplot(slm, aes(x=Log2_mean, y=CV))
+p <- ggplot(slm, aes(x=log2_mean, y=CV))
 p + geom_point(size= 0.7, shape = 1, alpha=0.6) +
   facet_wrap(~SampleID) + 
   theme_bw()
-ggsave(paste0(path,'a7-rep-cv-prefilter.png'), width=8, height=8)
+ggsave(paste(path,'a7-',n,'rpm-rep-cv-prefilter.png',sep=""), width=8, height=8)
 
 
 ##---- filter by max cv  --------------------------------------------------------------------------------------
 # filter by cv <= 0.6
 library(dplyr)
-n <- 0.6
-cv06.list <- lapply(ttreg.stats, filter, CV <= n)
+n <- 0.6 # set cv filter value
+cv06.list <- lapply(ttreg.stats, filter, CV <= n) # filter
 
-# name list elements
-names(cv06.list) <- list.names
+names(cv06.list) <- psl.names  # name list elements (recycle previous names)
+lapply(cv06.list, head) # check
   
 # take a look at results
 prefilter <- unlist(lapply(ttreg.stats, nrow))
 postfilter <- unlist(lapply(cv06.list, nrow))
-prefilter
-postfilter
+cvfilteredtab <- rbind(prefilter, postfilter)
+cvfilteredtab
 
 # get list into shape for plotting
 cv06m <- melt(cv06.list, id.vars = colnames(cv06.list[[1]]))
 cv06m$L1 <- NULL
 
-# look at distribution of read counts 
-p <- ggplot(cv06m, aes(x=Log2_mean))
+
+## --- plot after cv filter ---------------------------------------------------------------------------------------
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A7-all-ttreg/1rpm-cv06/plots/"
+n <- 1 # set rpm filter for filename suffix
+c <- 0.6 # set cv filter for filename suffix
+
+# distribution of read counts 
+p <- ggplot(cv06m, aes(x=log2_mean))
 p + geom_histogram(fill="white",color="black",binwidth=0.1) +
   facet_grid(SampleID~.) +
   geom_vline(xintercept =log(1,2)) +
   geom_vline(xintercept = log(2,2)) +
   geom_vline(xintercept = log(3,2)) +
   theme_bw()
- ggsave(paste0(path,'a7-rep-cv06-rpkm-hist.pdf'), width=8, height=8)
+ggsave(paste(path,'a7-',n,'rpm-',c,'cv','-rep-rpkm-hist.pdf',sep=""), width=8, height=8)
  
 # plot replicates against each other after cv filter
 p <- ggplot(cv06m, aes(x=log(Rep1_rpkm,2),y=log(Rep2_rpkm,2)))
 p + geom_point(size= 0.7, shape = 1, alpha=0.6) +
   facet_wrap(~SampleID) + 
   theme_bw()
-ggsave(paste0(path,'a7-rep-scatter-postfilter.png'), width=8, height=8)
+ggsave(paste(path,'a7-',n,'rpm-',c,'cv','-rep-scatter-postfilter.png',sep=""), width=8, height=8)
 
-# lookup and paste chr coordinates for each peak
+
+## --- lookup and paste coordinates for each peak -----------------------------------------------------------------
 library(dplyr)
 
-cv06.list.bed <- lapply(cv06.list, function(x) { left_join(x,ttreg[1:4],by="PeakID")})
+# join filtered peak files to original ttreg df 
+cv06.list.bed <- lapply(cv06.list, function(x) { left_join(x,ttreg[2:5],by="PeakID") } )
+# check for NAs
+sapply(cv06.list.bed, function(x) all(is.na(x)))
+# check
+lapply(cv06.list.bed, head)
+# re-arrange columns of each df
 cv06.list.bed <- lapply(cv06.list.bed, function(x) { cbind(x[1:2],x[11:13],x[3:10])})
-names(cv06.list.bed) <- list.names
+names(cv06.list.bed) <- psl.names  # name list elements (recycle previous names)
+lapply(cv06.list.bed, head)
+
+## --- export cv-filtered list and tables for each sample ----------------------------------------------------------
 
 # save list of cv-filtered dfs
-path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A7-all-ttreg/2rpm-cv06/RDa/"
-save(cv06.list.bed, file = paste(path,'a7-ttreg-2rpm-','cv',n,'-filtered-list.RDa',sep=""))
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A7-all-ttreg/1rpm-cv06/RDa/"
+n <- 1 # set rpm filter for filename suffix
+c <- 0.6 # set cv filter for filename suffix
+save(cv06.list.bed, file = paste(path,'a7-ttreg-',n,'rpm-',c,'cv','-list.RDa',sep=""))
 # load
-load(paste0(path,'a7-ttreg-2rpm-cv06-filtered-list.RDa'))
+load(paste0(path,'a7-ttreg-1rpm-0.6cv-list.RDa'))
 
 # export each df as .csv file
-path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A7-all-ttreg/2rpm-cv06/csv/"
-suffix <- paste('cv', n, '-filtered','.csv',sep="")
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A7-all-ttreg/1rpm-cv06/csv/"
+suffix <- paste('-',n,'rpm-',c,'cv','-filtered','.csv',sep="")
 lapply(names(cv06.list.bed), 
-       function(x) write.csv(cv06.list.bed[[x]], file=paste(path,x,'-2rpm-',suffix,sep=""), row.names=F))
+       function(x) write.csv(cv06.list.bed[[x]], file=paste(path,x,suffix,sep=""), row.names=F))
 
 
 ##---- merge all the filtered peaks ------------------------------------------------------------------------------
 # set path
-path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A7-all-ttreg/2rpm-cv06/csv/"
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A7-all-ttreg/1rpm-cv06/csv/"
 
 # get filenames
 filenames <- list.files(path = path, pattern = ".csv", full.names=T)
@@ -573,10 +716,11 @@ pl <- lapply(filenames, read.csv, colClasses = colClass) # [p]eak[l]ist
 
 # name list elements to match filenames 
 filenames1 <- list.files(path=path, pattern=".csv")
-sample.names <- strsplit(filenames1, split='-2rpm-')
+sample.names <- strsplit(filenames1, split='-1rpm-')
 sample.names <- unlist(lapply(sample.names, function(x) x[[1]]))
 names(pl) <- sample.names
 names(pl) # check
+lapply(pl, head)
 
 # remove extraneous columns
 pl <- lapply(pl, function(x) x[1:7])
@@ -628,20 +772,58 @@ start <- grepl(pattern = c("START*"), colnames(hcp))
 end <- grepl(pattern = c("END*"), colnames(hcp))
 hcp <- hcp[, !(chr | start | end)]
 
-# add peak coords 
+
+##--- add peak coordinaates ----------------------------------------------------------------------------------------
+# import peak file with normalized counts -
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A7-all-ttreg/1rpm-filtered/csv/"
+ttreg <- read.csv(file = paste(path,'a7-ttreg-consensus-1rpm-filtered-rpkm-named.csv',sep=""), header =T)
+names(ttreg)
+# remove extraneous column
+ttreg <- ttreg[-2]
+
 hcp.df <- left_join(hcp, ttreg[1:4], by = "PeakID") # hcp.[d]ata[f]rame
 # rearrange columns
 hcp.df <- cbind(hcp.df[1],hcp.df[18:20],hcp.df[2:17])
 names(hcp.df)
 
-# plot scatter matrices to get idea of pair-wise FC
-library(GGally)
-#test <- hcp.df
-test2 <- data.frame(lapply(hcp.df[5:20], log, 2))
-ncol(test2)
-jd_ggscatmat(test2[1:8])
-jd_ggscatmat(test2[c(1:4,5:6,15:16)])
+## --- save -------------------------------------------------------------------------------------------------------
+n <- 1 # set rpm filter for filename suffix
+c <- 0.6 # set cv filter for filename suffix
 
+# RDa
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A7-all-ttreg/1rpm-cv06/RDa/"
+save(hcp.df, file = paste(path,'a7-ttreg-',n,'rpm-',c,'cv-filtered-merged','.RDa',sep=""))
+
+# csv
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A7-all-ttreg/1rpm-cv06/csv/"
+write.csv(hcp.df, file=paste(path,'a7-ttreg-',n,'rpm-',c,'cv-filtered-merged','.csv',sep="" ), row.names=F)
+
+##--- plot ------------------------------------------------------------------------------------
+# set path
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A7-all-ttreg/1rpm-cv06/plots/"
+n <- 1 # set rpm filter for filename suffix
+c <- 0.6 # set cv filter for filename suffix
+
+# scatter matrices to get idea of pair-wise FC
+library(GGally)
+# make new df with log2 values
+hcp.log2 <- data.frame(lapply(hcp.df[5:20], log,2))
+# plot all ttreg
+jd_ggscatmat(hcp.log2[c(1:6,15:16)])
+# save
+ggsave(paste(path,'a7-',n,'rpm-',c,'cv-filtered-ttreg-rpkm.png',sep=""), width=11, height=11)
+# colon vs matching spleen
+jd_ggscatmat(hcp.log2[c(1:4,7:10)])
+# save
+ggsave(paste(path,'a7-',n,'rpm-',c,'cv-filtered-cln-spln-rpkm.png',sep=""), width=14, height=14)
+# mus vs matching spleen
+jd_ggscatmat(hcp.log2[c(5:6,11:12)])
+# save
+ggsave(paste(path,'a7-',n,'rpm-',c,'cv-filtered-mus-spln-rpkm.png',sep=""), width=8, height=8)
+# vat vs matching spleen
+jd_ggscatmat(hcp.log2[c(13:16)])
+# save 
+ggsave(paste(path,'a7-',n,'rpm-',c,'cv-filtered-vat-spln-rpkm.png',sep=""), width=8, height=8)
 ```
 <br>  
 
@@ -655,68 +837,283 @@ jd_ggscatmat(test2[c(1:4,5:6,15:16)])
 library(reshape2)
 library(ggplot2)
 
-# import peak file
-path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/csv/"
+## --- import file --------------------------------------------------------------------------------------------------
 
-ttreg <- read.csv(file = paste(path,'a5-ttreg-consensus-2rpm-filtered-rpkm.csv',sep=""), header =T)
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A7-all-ttreg/1rpm-cv06/csv/"
+hcp <- read.csv(file = paste(path,'a7-ttreg-1rpm-0.6cv-filtered-merged.csv',sep=""), header =T)
 
-##----plot read count distributions after merge -------------------------------------------------------------
+
+## --- plot read count distributions after merge --------------------------------------------------------------------
 # set plots path
-path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/plots/"
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A7-all-ttreg/1rpm-cv06/plots/"
 
 # set file suffix
-suffix <- paste0('a5-ttreg-', n,'rpm-filtered-merged-counts-rpkm')
+n <- 1 # set rpm filter for filename suffix
+c <- 0.6 # set cv filter for filename suffix
+suffix <- paste0('a7-ttreg-', n,'rpm-',c,'cv-filtered-merged-counts-rpkm')
 
 # plot and save
 pdf(paste0(path,suffix,'.pdf'), width=8, height=6)
 par(oma = c(4,1,0.5,1))
-h <- 4 # set height of horizontal line
-boxplot(log(ttreg[4:19],2), las = 2, cex.axis = 0.7, 
+h <- 2 # set height of horizontal line
+boxplot(log(hcp[5:20],2), las = 2, cex.axis = 0.7, 
         ylab='log2 rpkm', 
-        main=paste('merged atac peaks ','n=',nrow(ttreg),'; abline rpm=',h,sep=""))
+        main=paste('merged, rpm+cv-filtered atac peaks ','n=',nrow(hcp),'; abline rpm=',h,sep=""))
 abline(h=h, col = 'red')
 dev.off()
 
-# try rotated view
-# boxplot(log(ttreg[4:19],2), las = 2, cex.axis = 0.5, horizontal =T)
 
-##---- quantile normalization ----------------------------------------------------------------------------
+## --- quantile normalization ---------------------------------------------------------------------------------------
 library(preprocessCore)
 
 # create matrix of rpm values
-ttrm <- as.matrix(ttreg[,4:19]) # [t][t][r]eg[m]atrix
+hcpm <- as.matrix(hcp[,5:20]) # [h]igh[c]onfidence[p]eak[m]atrix
 
 # qn using preprocess core
-ttrqn.mat <- normalize.quantiles(ttrm) #[t][t][r]eg[q]uantile[n]ormalized[mat]rix
+hcpqn.mat <- normalize.quantiles(hcpm) #hcp[q]uantile[n]ormalized.[mat]rix
 
 # set file suffix
-suffix <- paste0('a5-ttreg-', n,'rpm-filtered-merged-counts-rpkm-qn')
+n <- 1 # set rpm filter for filename suffix
+c <- 0.6 # set cv filter for filename suffix
+suffix <- paste0('a7-ttreg-', n,'rpm-',c,'cv-filtered-merged-counts-rpkm-qn')
 
-##----plot read count distributions after merge then qn ---------------------------------------------------
+# set col names 
+colnames(hcpqn.mat) <- names(hcp[5:20])
+
+## --- plot read count distributions after merge then qn ---------------------------------------------------
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A7-all-ttreg/1rpm-cv06/plots/"
 
 # plot and save
 pdf(paste0(path,suffix,'.pdf'), width=8, height=6)
 par(oma = c(4,1,0.5,1))
-h <- 4 # set height of horizontal line
-boxplot(log(ttrqnmat,2), las = 2, cex.axis = 0.7, 
+h <- 2 # set height of horizontal line
+boxplot(log(hcpqn.mat,2), las = 2, cex.axis = 0.7, 
         ylab='log2 rpkm', 
-        main=paste('merged atac peaks ','n=',nrow(ttreg),'; abline rpm=',h,sep=""))
+        main=paste('merged, rpm+cv-filtered atac peaks ','n=',nrow(hcp),'; abline rpm=',h,sep=""))
 abline(h=h, col = 'red')
 dev.off()
 
-##--- export qn rpkm values -------------------------------------------------------------------------------
-path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/RDa/"
-suffix <- paste0('a5-ttreg-', n,'rpm-filtered-merged-counts-rpkm-qn-mat')
-save(ttrqnmat, file=paste0(path,suffix,'.RDa'))
+
+## --- export qn rpkm values -------------------------------------------------------------------------------
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A7-all-ttreg/1rpm-cv06/RDa/"
+# set file suffix
+n <- 1 # set rpm filter for filename suffix
+c <- 0.6 # set cv filter for filename suffix
+suffix <- paste0('a7-ttreg-', n,'rpm-',c,'cv-filtered-merged-counts-rpkm-qn-mat')
+
+save(hcpqn.mat, file=paste0(path,suffix,'.RDa'))
 
 # as df with chrom info pasted on
 # add chrom coordinates info
-ttrqn.df <- cbind(ttreg[1:3],ttrqnmat)
+hcpqn.df <- cbind(hcp[1:4],hcpqn.mat)
 
-suffix <- paste0('a5-ttreg-', n,'rpm-filtered-merged-counts-rpkm-qn-df')
-save(ttrqn.df, file=paste0(path,suffix,'.RDa'))
+suffix <- paste0('a7-ttreg-', n,'rpm-',c,'cv-filtered-merged-counts-rpkm-qn-df')
+save(hcpqn.df, file=paste0(path,suffix,'.RDa'))
 ```
 <br>  
+
+
+#### Average repliate values and generate read count matrix to use for clustering
+**Pseudo:**  
++ Take average of replicate values for each sample
++ Plot distributions of read counts after averaging reps
++ **Plot PCA after averaging reps** (TO DO)
++ Convert replicate averages to log2
++ **Give each peak a unique ID**
++ Export avg rpkm, log2rpkm of avgs 
+```{r count_mat}
+##---- # load qn read count matrix and df ------------------------------------------------------------------------
+n <- 1
+c <- 0.6
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A7-all-ttreg/1rpm-cv06/RDa/"
+
+# read count matrix
+suffix <- paste0('a7-ttreg-', n,'rpm-',c,'cv-filtered-merged-counts-rpkm-qn-mat')
+load(paste0(path,suffix,'.RDa'))
+
+# read count df
+suffix <- paste0('a7-ttreg-', n,'rpm-',c,'cv-filtered-merged-counts-rpkm-qn-df')
+load(paste0(path,suffix,'.RDa'))
+
+
+##----avg replicates  -------------------------------------------------------------------------------------
+library(dplyr)
+
+# compute replicate averages 
+ttr.avg <- hcpqn.df %>% # ttreg averages
+  transmute(mean1 = rowMeans(.[5:6]),
+            mean2 = rowMeans(.[7:8]),
+            mean3 = rowMeans(.[9:10]),
+            mean4 = rowMeans(.[11:12]),
+            mean5 = rowMeans(.[13:14]),
+            mean6 = rowMeans(.[15:16]),
+            mean7 = rowMeans(.[17:18]),
+            mean8 = rowMeans(.[19:20]))
+
+# generate new column names
+samples <- names(hcpqn.df[-c(1:4)])
+samples <- as.character(strsplit(samples, split = '_rep1.2'))
+samples <- as.character(strsplit(samples, split='_rep[1,2,3]'))
+samples <- as.character(strsplit(samples, split='_rpkm_r[1,2]'))
+samples <- unique(samples)
+
+names(ttr.avg) <- samples # rename columns
+strand <- '+' # add strand
+
+ttr.avg <- cbind(hcpqn.df[1:4],Strand = strand, ttr.avg) # bind together
+
+# re-order to put all t-treg near each other, then all splenic
+ttr.avg <- ttr.avg[c(1:8,13,9:12)]
+
+##---- export -------------------------------------------------------------------------------------------------
+n <- 1
+c <- 0.6
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A7-all-ttreg/1rpm-cv06/RDa/"
+
+# raw values as RDa
+suffix <- paste0('a7-ttreg-',n,'rpm-',c,'cv-filtered-rep-avg-counts-rpkm-qn')
+save(ttr.avg, file=paste0(path,suffix,'.RDa'))
+
+# load 
+load(paste0(path, 'a7-ttreg-1rpm-0.6cv-filtered-rep-avg-counts-rpkm-qn.RDa'))
+
+# raw values as .csv
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A7-all-ttreg/1rpm-cv06/csv/"
+write.csv(ttr.avg, file=paste0(path,suffix,'.csv'), row.names=F) # as csv
+
+# as .bed
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A7-all-ttreg/1rpm-cv06/bed/"
+write.table(ttr.avg[1:5],file=paste0(path,suffix,'.bed'), row.names=F, sep="\t",
+            col.names=c('#PeakID','Chr','Start','End','Strand'))
+
+
+##---- plot -------------------------------------------------------------------------------------------------
+# set filenames
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A7-all-ttreg/1rpm-cv06/plots/" # set plots path
+n <- 1
+c <- 0.6
+suffix <- paste0('a7-ttreg-', n,'rpm-',c,'cv-filtered-rep-avg-counts-rpkm-qn') # set file suffix
+
+# boxplot average read count distributions
+pdf(paste0(path,suffix,'.pdf'), width=8,height=6, pagecentre = T)
+par(oma = c(4,1,0.5,1))
+boxplot(log(ttr.avg[6:13],2), las=2, cex.axis=0.7,
+        ylab='replicate avg log2rpkm',main=paste('merged rpm and cv-filtered atac peaks','n=',nrow(ttr.avg),sep=""))
+dev.off()
+
+
+
+##---- log2 convert and export --------------------------------------------------------------------------------
+ttr.avg.l2 <- ttr.avg #[t][tr]eg[a]verage[l]og[2]
+ttr.avg.l2[6:13] <- as.data.frame(lapply(ttr.avg.l2[6:13], log,2))
+
+
+# export
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A7-all-ttreg/1rpm-cv06/csv/" # set data path
+n <- 1
+c <- 0.6
+suffix <- paste0('a7-ttreg-', n,'rpm-',c,'cv-filtered-rep-avg-counts-log2-rpkm-qn')
+# csv
+write.csv(ttr.avg.l2, file=paste0(path,suffix,'.csv'), row.names=F)
+
+# RDa
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A7-all-ttreg/1rpm-cv06/RDa/"  # set data path
+save(ttr.avg.l2, file=paste0(path,suffix,'.RDa'))
+
+```
+<br>
+
+
+#### For qn-rpm matrix of peak scores, convert peakIDs to row names
++ (would like to use GeneName or Functional Element but rownames have to be unique) 
+```{r peakID_rownames}
+# set path and filename
+#path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A7-all-ttreg/1rpm-cv06/bed/"
+#filename <- 'a7-ttreg-1rpm-0.6cv-filtered-rep-avg-counts-rpkm-qn.bed'
+# read in
+#ttr.annot <- read.delim(paste0(path,filename), header=T, check.names=T, sep='\t')
+# change col names
+#names(ttr.annot) <- c('PeakID', 'Chr','Start','End','Strand')
+
+# load counts 
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A7-all-ttreg/1rpm-cv06/RDa/" 
+filename <- 'a7-ttreg-1rpm-0.6cv-filtered-rep-avg-counts-log2-rpkm-qn.RDa'
+load(paste0(path,filename))
+
+
+## --- convert log2rpm df to matrix with rownames == PeakID -----------------------------------------------------
+library(dplyr)
+# convert peakID to rownames
+rownames(ttr.avg.l2) <- ttr.avg.l2$PeakID
+# remove extraneous columns
+ttr.avg.l2 <- ttr.avg.l2[-c(1:5)]
+# convert to matrix
+ttrm <- as.matrix(ttr.avg.l2)
+# check
+head(attributes(ttrm)[[1]])
+head(dimnames(ttrm)[[1]],5)
+dimnames(ttrm)[[2]]
+
+
+##---- export -------------------------------------------------------------------------------------------------
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A7-all-ttreg/1rpm-cv06/RDa/" # set data path
+n <- 1 # set rpm cutoff for filenames
+c <- 0.6 # set cv cutoff for filenames
+
+# as RDa
+suffix <- paste0('a7-ttreg-', n, 'rpm-',c,'cv-filtered-rep-avg-counts-log2-rpkm-qn-peakID-mat')
+save(ttrm, file=paste0(path,suffix,'.RDa'))
+
+# as csv
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A7-all-ttreg/1rpm-cv06/csv/" # set data path
+write.csv(ttrm, file = paste0(path,suffix,'.csv'))
+```
+<br>  
+
+
+#### Finding best heatmap colors for clusters
+```{r colors}
+eqSpect <- colorRampPalette(
+               c("#f2003c", "#F66900", "#F19100", "#F1B100",
+                 "#EFD300", "#f0ea00", "#CBDB00", "#9DD501",
+                 "#5ED108", "#00AF63", "#00A78E", "#00a3ac",
+                 "#0093af", "#0082b2", "#006ebf", "#4F37C2",
+                 "#8000D3", "#A001BF", "#BA00A4", "#D0007F"),
+                 space="rgb",
+                 interpolate="spline")
+n <- 16
+
+niceCols <- eqSpect(n)
+
+# or 
+niceCols <- colorRampPalette(rev(brewer.pal(10, 'Spectral')))(50)
+niceCols <- rev(brewer.pal(11, 'Spectral'))
+```
+<br>  
+
+
+#### Hclust and Km on all **QN normalized** high-confidence peaks
+```{r Hc_Km_allqnpeaks}
+## ---- load peaks ---------------------------------------------------------------------------------------------
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A7-all-ttreg/1rpm-cv06/csv/" # set data path
+
+ttrm <- read.csv(file=paste0(path, 'a7-ttreg-1rpm-0.6cv-filtered-rep-avg-counts-log2-rpkm-qn-peakID-mat.csv'),
+                 row.names=1, header=T)
+
+# convert to matrix
+ttrm <- as.matrix(ttrm)
+head(dimnames(ttrm),10)
+
+##---- try kmeans function in pheatmap() --------------------------------------------------------------------
+library(pheatmap)
+library(RColorBrewer)
+
+# set colors
+niceCols <- colorRampPalette(rev(brewer.pal(11, 'Spectral')))(50)
+
+set.seed(123456)
+# save results of pheatmap to object p
+p <- pheatmap(ttrm, color= niceCols, clustering_distance_rows = 'minkowski', clustering_distance_cols = 'correlation', kmeans_k = 20)
 
 
 
