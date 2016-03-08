@@ -38,10 +38,11 @@ https://github.com/jdis24/ATAC.git
 + compress output files
 + Orchestra: 
 `bsub -q priority -W 1:00 ./atac_peaks_PE.sh .`
++ get read counts for each sample, normalized to total library size (ChIPQC)
 <br>    
 
 
-#### Script
+#### Peak-calling script
 + default = hidden
 ```{r atac_peaks_PE.sh, engine="bash"}
 #!/bin/bash
@@ -136,7 +137,7 @@ gzip *sorted.uniq.bam
 <br>    
 
 
-#### getting sample-by-sample normalized read counts for each peak
+#### Getting sample-by-sample normalized read counts for each peak
 + checked output of one sample on genome browser
 + looks good - calculated rpm values correspond to peak height
 + `bsub -q mcore -W 4:00 -n 8 Rscript jd_chipqc_peaks.R`
@@ -193,10 +194,10 @@ peak_rpm <- function(reads, peaks) {
 setwd("/groups/cbdm-db/jrd26/ATAC_crossbatch/R/temp/")
 
 # get names of peak files
-peaks <- list.files(".", pattern = "*.bed.txt")
+peaks <- list.files("./peaks", pattern = "*.bed.txt")
 
 # get names of bam files
-reads <- list.files(".", pattern = "*.uniq.bam$")
+reads <- list.files("./reads", pattern = "*.uniq.bam$")
 
 # loop over each peak/bam pair in folder
 for(i in 1:length(reads)) {
@@ -208,7 +209,7 @@ for(i in 1:length(reads)) {
 #### Import peak files into peak list
 ```{r peak_list, eval=T}
 # create path to .csv files  
-path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Master_peaks/R/temp/Batch1/"
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Master_peaks/R/peaks_with_counts/working/"
 
 # get filenames
 filenames1 <- list.files(path = path, pattern = ".csv")
@@ -330,16 +331,16 @@ ggsave("../../Master_peaks/plots/hist_allpeaks_batch1.pdf", width=5, height=6.5)
 <br>    
 
 
-#### Plot distribution of peaks across chromsomes
+#### TO DO: Plot distribution of peaks across chromsomes
 + goal = bar plot, turned on side, facet on sample
 
 
 
-#### Plot distribution of read counts across each chromsome?
+#### TO DO: Plot distribution of read counts across each chromsome?
 + goal = boxplots
 + goal = histograms, bin size and limits will be key for clear data
 
-#### Generate ChIPQC summary table 
+#### TO DO: Generate ChIPQC summary table 
 + Pseudo:
 + make a df in R by pasting each required var
 + var length = length filenames (for peak.csv)
