@@ -931,7 +931,7 @@ for (i in 1:length(cl)) { # loop over cluster list and append clusterID to peak
   pdfc <- rbind(pdfc, df)
 }
 
-# convert sample 3 (n = 10000 peaks) to dataframe
+# convert ttrm to dataframe
 pdf <- data.frame(PeakID = rownames(ttrm), ttrm, row.names=NULL)  # [p]eak[d]ata[f]rame
 
 # add clusterID onto df
