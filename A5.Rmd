@@ -41,6 +41,15 @@ https://github.com/jdis24/ATAC.git
 + get genomic annotations of strong peaks (compare to unfilterd to check degree of TSS enrichment)
 + use DiffBind to create merged peakset across all T-treg and get read counts
 + export all peaks and their rpkm score in each sample 
+** quantile normalize read count scores**
++ plot read count distributions before qn
++ use bioconductor function to qn
++ plot read count distributions after qn
+** average replicate values and generate read count matrix**
++ take average of replicate values for each sample
++ plot distributions of read counts after averaging reps
++ convert replicate averages to log2
++ export avg rpkm, log2rpkm
 **start clustering analysis**
 + test for outliers here? 
 + convert rpkm values to log2 and take average across replicates to get single value for each cell type
