@@ -67,6 +67,92 @@ https://github.com/jdis24/ATAC.git
 <br>    
 
 
+#### JDs plotting functions
+```{r plotting_fxns}
+library(GGally)
+jd_ggscatmat <- function(data, columns = 1:ncol(data), color = NULL, ...) {
+  data.choose <- data[, columns]
+  dn <- data.choose[sapply(data.choose, is.numeric)]
+  if (ncol(dn) < 2) {
+    stop("Not enough numeric variables to make a scatter plot matrix")
+  }
+  if (ncol(dn) == 0) 
+    stop("All of your variables are factors. Need numeric variables to make scatterplot matrix.")
+  a <- uppertriangle(data, columns = columns, color = color)
+  if (is.null(color)) {
+    plot <- jd_scatmat(data, columns = columns) + geom_text(data = a, 
+                                                         aes_string(label = "r"), colour = "black")
+  }
+  else {
+    plot <- jd_scatmat(data, columns = columns, color = color) + 
+      geom_text(data = a, aes_string(label = "r", color = "colorcolumn")) + 
+      labs(color = color)
+  }
+  factor <- data.choose[sapply(data.choose, is.factor)]
+  if (ncol(factor) == 0) {
+    return(plot)
+  }
+  else {
+    warning("Factor variables are omitted in plot")
+    return(plot)
+  }
+}
+
+# draw scatterplot matrix
+jd_scatmat <- function (data, columns = 1:ncol(data), color = NULL) 
+{
+  data.choose <- data[, columns]
+  dn <- data.choose[sapply(data.choose, is.numeric)]
+  if (ncol(dn) == 0) {
+    stop("All of your variables are factors. Need numeric variables to make scatterplot matrix.")
+  }
+  else {
+    ltdata.new <- lowertriangle(data, columns = columns, 
+                                color = color)
+    r <- ggplot(ltdata.new, mapping = aes_string(x = "xvalue", 
+                                                 y = "yvalue")) + theme(axis.title.x = element_blank(), 
+                                                                        axis.title.y = element_blank()) + facet_grid(ylab ~ 
+                                                                                                                       xlab, scales = "free") + theme(aspect.ratio = 1)
+    if (is.null(color)) {
+      densities <- do.call("rbind", lapply(1:ncol(dn), 
+                                           function(i) {
+                                             data.frame(xlab = names(dn)[i], ylab = names(dn)[i], 
+                                                        x = dn[, i])
+                                           }))
+      for (m in 1:ncol(dn)) {
+        j <- subset(densities, xlab == names(dn)[m])
+        r <- r + stat_density(aes(x = x, y = ..scaled.. * 
+                                    diff(range(x)) + min(x)), data = j, position = "identity", 
+                              geom = "line", color = "black")
+      }
+      r <- r + geom_point(na.rm = TRUE, size=0.5, color="dark green") + guides(fill=guide_legend(reverse=TRUE))
+      return(r)
+    }
+    else {
+      densities <- do.call("rbind", lapply(1:ncol(dn), 
+                                           function(i) {
+                                             data.frame(xlab = names(dn)[i], ylab = names(dn)[i], 
+                                                        x = dn[, i], colorcolumn = data[, which(colnames(data) == 
+                                                                                                  color)])
+                                           }))
+      for (m in 1:ncol(dn)) {
+        j <- subset(densities, xlab == names(dn)[m])
+        r <- r + stat_density(aes_string(x = "x", y = "..scaled.. * diff(range(x)) + min(x)", 
+                                         colour = "colorcolumn"), data = j, position = "identity", 
+                              geom = "line")
+      }
+      r <- r + geom_point(data = ltdata.new, aes_string(colour = "colorcolumn"), 
+                          na.rm = TRUE, size=0.5, color="dark green") +
+        guides(fill=guide_legend(reverse=TRUE))
+      return(r)
+    }
+  }
+}
+
+```
+<br>
+
+
 #### Import peak files into peak list and export bed files
 ```{r peak_list, eval=T}
 # create path to .csv files  
@@ -397,7 +483,7 @@ boxplot(log(ttrqnmat,2), las = 2, cex.axis = 0.7,
 abline(h=h, col = 'red')
 dev.off()
 
-##--- export qn rpkm values -------------------------------------------------------------------------------
+## --- export qn rpkm values -------------------------------------------------------------------------------
 path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/RDa/"
 suffix <- paste0('a5-ttreg-', n,'rpm-filtered-merged-counts-rpkm-qn-mat')
 save(ttrqnmat, file=paste0(path,suffix,'.RDa'))
@@ -410,6 +496,40 @@ suffix <- paste0('a5-ttreg-', n,'rpm-filtered-merged-counts-rpkm-qn-df')
 save(ttrqn.df, file=paste0(path,suffix,'.RDa'))
 ```
 <br>  
+
+
+#### Draw scatterplot matrix for all pair-wise comparisons
+```{r scatmat}
+## --- import peak file  ----------------------------------------------------------------------------------------
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/RDa/"
+n <- 2
+suffix <- paste0('a5-ttreg-', n,'rpm-filtered-merged-counts-rpkm-qn-df')
+load(paste0(path,suffix,'.RDa'))
+
+
+## --- log2 transform rpkm values --------------------------------------------------------------------------------
+ttrqn.log2 <- data.frame(lapply(ttrqn.df[4:19], log, 2))
+
+
+## --- plot and save --------------------------------------------------------------------------------------------
+library(GGally)
+library(ggplot2)
+# set path to save 
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/plots/"
+n <-2 # rpm cutoff for filename
+
+# plot all ttreg
+jd_ggscatmat(ttrqn.log2[c(1:6,15:16)])
+# save
+ggsave(paste(path,'a5-',n,'rpm-filtered-ttreg-pairs-rpkm.png',sep=""), width=11, height=11)
+
+# colon vs matching spleen
+jd_ggscatmat(ttrqn.log2[c(1:4,7:10)])
+
+
+```
+<br>  
+
 
 
 #### Average repliate values and generate read count matrix to use for clustering
@@ -1002,7 +1122,6 @@ test <- pdfco
 cols <- palette(brewer.pal(8, "Dark2"))[as.numeric(pdfco$ClusterID)]
 head(cbind(rownames(test),cols))
 
-
 # set colors
 hmcol <- colorRampPalette(brewer.pal(9, "GnBu"))(100)
 
@@ -1560,6 +1679,103 @@ pheatmap(as.matrix(ar[2:9]), cluster_rows = F, color = niceCols, annotation_row 
 ```
 <br>
 
+
+#### Expression of genes near differential peak clusters 
++ mapped regions in each cluster to all nearby genes (GREAT)
++ imported t-treg microarray GE 
++ created matrix of GE values for genes in GO categories enriched in each cluster
++ heatmap genes
+```{r cluster_go_GE}
+## --- import files -----------------------------------------------------------------------------------------------
+# treg ge df
+path <- '/Volumes/JD_WD2/JRD_CBDMLab/JRD_CBDM_public_seqanalyses/Microarray/GCT_given/working/'
+save(expcvf, file = paste0(path,'ttreg_mus_spl_vat_cln_expcvf', '.RDa'))
+
+# path
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/apclusters-great/"
+
+# cluster5+7 - genes in ATPase ontology
+file <- 'c5plus7_nucleoside_triphos_genes.txt'
+atp_genes <- read.delim(file = paste0(path,file), sep='\t')
+atp_genes <- atp_genes[1] # remove extraneous cols
+names(atp_genes) <- 'GeneSymbol' # rename column
+
+
+# cluster 5 - vat genes 
+file <- 'c5_vat_combo_genes.txt'
+vat_genes <- read.delim(file = paste0(path,file), sep='\t')
+vat_genes <- vat_genes[1]
+vat_genes <- unique(vat_genes)
+
+## --- merge genes with expression ---------------------------------------------------------------------------------
+library(dplyr)
+
+## atp genes 
+atp_ge <- inner_join(atp_genes, expcvf[1:7], by = 'GeneSymbol')
+# re-arrange column order
+atp_ge <- atp_ge[c(1,7,6,2,4,3,5)]
+# convert to matrix
+rownames(atp_ge) <- atp_ge$GeneSymbol
+atp_ge.mat <- as.matrix(atp_ge[-1])
+atp_ge.mat <- apply(atp_ge.mat, 2, log,2)
+
+## vat genes
+vat_ge <- inner_join(vat_genes, expcvf[1:7], by = 'GeneSymbol')
+# re-arrange column order
+vat_ge <- vat_ge[c(1,7,6,2,4,3,5)]
+# convert to matrix
+rownames(vat_ge) <- vat_ge$GeneSymbol
+vat_ge.mat <- as.matrix(vat_ge[-1])
+vat_ge.mat <- apply(vat_ge.mat, 2, log,2)
+
+
+
+## --- heatmap ---------------------------------------------------------------------------------
+library(pheatmap)
+library(RColorBrewer)
+
+# set colors
+niceCols <- colorRampPalette(rev(brewer.pal(11, 'Spectral')))(50)
+
+# plot every other gene
+pheatmap(atp_ge.mat[seq(from =1, to = nrow(atp_ge.mat), by = 2),], color = niceCols, cluster_cols = F)
+pheatmap(atp_ge.mat, color = niceCols, cluster_cols = F)
+
+
+pheatmap(vat_ge.mat, color = niceCols, cluster_cols = F)
+
+
+## --- save ------------------------------------------------------------------------------------------------------
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A5-all-ttreg/2rpm-filtered/apclusters-great/"
+
+pdf(paste0(path,"atp-ge.pdf"), width=6, height=6)
+pheatmap(atp_ge.mat[seq(from =1, to = nrow(atp_ge.mat), by = 2),], color = niceCols, cluster_cols = F)
+dev.off()
+
+pdf(paste0(path,"vat-ge.pdf"), width=6, height=6)
+pheatmap(vat_ge.mat, color = niceCols, cluster_cols = F)
+dev.off()
+
+png(paste0(path,"vat-ge.png"), width=600, height=600)
+pheatmap(vat_ge.mat, color = niceCols, cluster_cols = F)
+dev.off()
+
+```
+<br>  
+
+
+
+#### Enriched TFBS in differential peak clusters
++ homer v4.6 run on Orchestra
++ `findMotifsGenome.pl a7-ttreg-1rpm-0.8cv-fc2pass-apk6-c4.bed.txt mm9 a7-apk6-c4-motifs-200/ -size 200 -mask -preparsedDir new/`
+```{r cluster_motifs, engine='bash'}
+# load module 
+module load seq/homer/4.6
+
+# run against whole genome background, -/+200bp, repeat-masked genome
+findMotifsGenome.pl a5-ttreg-2rpm-fil-qn-fc2-pass-apclust5.bed.txt mm9 a5-apk9-c5-motifs-allbg-200/ -size 200 -mask -preparsedDir new/
+```
+<br> 
 
 #### Annotation of differential peaks in ChIPseeker
 ```{r annot_varpeaks}
