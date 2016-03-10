@@ -35,7 +35,7 @@ https://github.com/jdis24/ATAC.git
 + for each gct, collapse duplicates by median
 + merge gcts together by ProbeSetID
 + draw cv vs mean
-+ divide into Treg expr vs non (mean >= 100, cv <= ?)
++ divide into Treg expr vs non (mean >= 100, cv <= 0.06)
 
 #### Functions
 ```{r jrd_functions}
@@ -142,7 +142,7 @@ save(ttreg.gct, file=paste0(path,'ttreg_mus_spl_vat_cln.RDa'))
 <br> 
 
 
-#### Plot and filter by cv and expression
+#### Plot cv and expression
 ```{r cv_mean}
 # load file
 load(paste0(path,'ttreg_mus_spl_vat_cln.RDa'))
@@ -230,7 +230,7 @@ ggsave(filename=paste0(path,"muscle.cv.mean.pdf"),width=4,height=4)
 ## if want to plot and save in single image
 l10cv2.plot <- l10cv2 # make a copy for melting
 samples <- c("Mus.d4","SplwMus.d4","VAT.RB", "LNwVAT.RB","Cln.Rorcneg","Cln.Rorcpos")
-names(l10cv2.plot) <- c('GeneSymbol',samples,samples)
+names(l   dd10cv2.plot) <- c('GeneSymbol',samples,samples)
 
 df1 <- melt(l10cv2.plot[1:7], id.vars='GeneSymbol', variable.name= 'Sample', value.name ='Mean')
 df2 <- melt(l10cv2.plot[c(1,8:13)], id.vars='GeneSymbol', variable.name= 'Sample', value.name ='cv2')
@@ -251,6 +251,40 @@ p + geom_point(size=0.2) +
 path <- '/Volumes/JD_WD2/JRD_CBDMLab/JRD_CBDM_public_seqanalyses/Microarray/GCT_given/working/plots/'
 ggsave(filename = paste0(path,'log10cv2.pdf'), width=10, height=8)
 
+```
+<br>  
+
+
+#### Filter by expr and cv 
+```{r expr_cv_filter}
+## -- load file --------------------------------------------------------------------------
+
+path <- '/Volumes/JD_WD2/JRD_CBDMLab/JRD_CBDM_public_seqanalyses/Microarray/GCT_given/working/'
+load(paste0(path,'ttreg_mus_spl_vat_cln_agct.RDa'))
+
+
+## -- filter by expr and cv --------------------------------------------------------------------------
+# create new df with only mean and cvs 
+ttrge.means.cvs <- agct[,c(1,21,26,27,32,33,38,39,44,45,50,51,56)] #[tt]reg[g]ene[e]xpression
+# re-order to put means together, same for cvs
+ttrge.means.cvs <- ttrge.means.cvs[c(1,2,4,6,8,10,12,3,5,7,9,11,13)] 
+names(ttrge.means.cvs)
+# rename columns
+new_names <- c('GeneSymbol','Mus_mean','Spl_wMus_mean','Vat_mean','LN_wVat_mean','ClnRORn_mean','ClnRORp_mean',
+               'Mus_cv2','Spl_wMus_cv2','Vat_cv2','LN_wVat_cv2','ClnRORn_cv2','ClnRORp_cv2')
+
+
+
+# filter by expr > 100
+library(dplyr)
+expf <- filter(ttrge.means.cvs, 
+               TR.4dINJ.Mu_mean > 100 |
+                 TR.4dINJ.Sp_mean > 100 | 
+                 ABD.TR.Retired.B6_mean)
+
+
+
+ttrge1 <- 
 
 ```
 
