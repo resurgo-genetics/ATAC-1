@@ -5,3 +5,251 @@ date: "March 14, 2016"
 output: html_document
 ---
 
+last modified: `r Sys.Date()`
+<br>    
+
+#### README
++ this document contains code and explanation for an analysis of tissue-Treg gene expression microarray data
+<br>    
+
+
+#### R Markdown Specifications
+Set global options
+```{r setoptions, echo=F}
+library(knitr)
+opts_chunk$set(echo=F, eval=F, warning=F, message=F)
+```
+<br>    
+
+Github
+https://github.com/jdis24/ATAC.git
+<br>    
+
+
+#### Pipeline for pair-wise analysis of each T-Treg with its matching lymphoid Treg (same for Tconv)
++ [following steps done in Excel]
++ trim .gct so that it only contains one set of tissue samples and one set of lymphoid samples
++ put tissue columns before lymphoid
++ [following steps done in R]
++ import .gct file into R
++ collapse duplicate probes by median expression (CBDM code)
++ generate summary stats and plots for each sample: rep mean, rep cv, (dplyr)
++ filter by min expr >100 in >=1 sample and replicate cv < 0.x in all samples
++ calculate fold-change: tissue vs spleen
++ generate FC plots: expr vs expr, p vs fc, fc vs mean (ggplot2)
++ set FC and p-value cutoffs and generate [d]ifferentially [e]xpressed [g]enes (DEG) (Multiplot)
++ annotate DEG (clusterProfiler)
+<br>    
+
+
+#### Functions
+```{r functions}
+####### ---------------------------- #######
+#######       READ GCT FILE          #######
+####### ---------------------------- #######
+read.gct <- function(datafile="") {
+  if(datafile=="") {
+    datafile = choose.files(multi=F, filter=c("GCT file","*.gct"))
+    if(length(datafile)==0)
+      return()
+  }	
+  x = read.table(datafile, as.is=T, skip=2, header=T, sep="\t", quote="\"", check.names=F, fill=TRUE, comment.char="")
+  rownames(x) = as.character(x[,1])
+  return(x)
+}
+
+
+
+###################################
+###      COLLAPSE DATASET
+###   
+### collapse all probe set expression values for 
+### a given gene into a single expression value
+###
+###################################
+collapseDataset <- function(gct, collapse.method=median) {
+  # Computes a data set with unique gene symbols by collapsing duplicated genes.
+  #
+  # Args:
+  #   gct: A tab-delimited text file of linear gene expression values
+  #   collapse.method: the operation used to compute a composite expression value from
+  #                    multiple entries of a given gene. Default=median
+  #
+  # Returns:
+  #   a gct file with uniqe entries for each gene in the input gct
+  
+  # find list of duplicated genes
+  duplicates <- unique(gct$GeneSymbol[duplicated(gct$GeneSymbol)])
+  
+  # collapse gene to a single entry
+  out.gct <- matrix(nrow=length(duplicates), ncol=(ncol(gct) - 2))
+  for(i in 1:length(duplicates)) {
+    gene <- duplicates[i]
+    is.gene <- gct$GeneSymbol == gene
+    
+    out.gct[i,] <- apply((as.matrix(gct[is.gene,][,-c(1:2)])), 2, collapse.method)
+    print(paste(i, " Collapsing ", gene))
+    
+    # replace all values for duplicate genes with values computed by the
+    # collapse.method (mean, median, etc...)
+    num.cols <- ncol(out.gct)
+    num.rows <- sum(is.gene)
+    gct[which(is.gene), ][,-c(1,2)] <-  matrix(out.gct[i,], num.rows, num.cols, byrow=T)
+  }
+  
+  # Remove duplicate entries of median/max value for each duplicated gene
+  collapsed.gct <- unique(gct[,-1])
+  # Remove probeIDs (these are no longer relevant for collapsed genes)
+  row.names(collapsed.gct) <- NULL
+  return (cbind(ID=1:nrow(collapsed.gct), collapsed.gct))
+}
+
+
+####### ---------------------------- #######
+#######           ROW STATS          #######
+####### ---------------------------- #######
+# calculate stats over all numeric columns of df 
+row_stats <- function(df) {
+  nums <- sapply(df, is.numeric) # extract numeric cols of df
+  
+  df_nums <- df[,nums] # subset df by numeric cols
+  df_nums <- as.data.frame(apply(df_nums, 2, log,2)) # convert expression to log2
+  
+  stats <- transmute_(df_nums, 
+                      Mean = ~rowMeans(df_nums),
+                      SD = ~rowSds(as.matrix(df_nums)))
+  CV <- stats$SD / stats$Mean
+  
+  df_other <- df[!nums]     
+  cbind(df_other,stats,CV)
+}
+
+```
+<br>  
+
+
+
+#### Import gct file and collapse duplicate probes
+```{r collapse_dups}
+## --- set tissue name ------------------------------------------------------------------------------------------
+tissue_name <- 'fat'
+
+## --- read gct --------------------------------------------------------------------------------------------------
+path <- '/Volumes/JD_WD2/JRD_CBDMLab/JRD_CBDM_public_seqanalyses/Microarray/GCT_given/working/'
+file <- paste0(tissue_name,'.gct')
+
+gct <- read.gct(datafile = paste0(path,file)) 
+
+## --- collapse probes -------------------------------------------------------------------------------------------
+gct_coll <- collapseDataset(gct = gct)
+
+# remove first two columns
+gct_coll <- gct_coll[-1]
+
+## --- write csv -------------------------------------------------------------------------------------------------
+write.csv(gct_coll, file = paste0(path,tissue_name,'.collapsed','.csv'), row.names = F)
+
+```
+<br>  
+
+
+#### Sample summary stats and plots
+```{r summ_stats}
+# divide into tissue and lymphoid df
+# add sampleID
+# combine into list
+# apply stat function
+# melt the list
+# generate plots, facet on SampleID
+## --- import file ------------------------------------------------------------------------------------------------
+path <- '/Volumes/JD_WD2/JRD_CBDMLab/JRD_CBDM_public_seqanalyses/Microarray/GCT_given/working/'
+tissue_name <- 'fat'
+dat <- read.csv(file = paste0(path,tissue_name,'.collapsed','.csv'))
+
+
+## --- divide samples ---------------------------------------------------------------------------------------------
+tdat <- data.frame(dat[1:3])
+ldat <- data.frame(dat[c(1,4:5)])
+
+## --- add sample ID  --------------------------------------------------------------------------------------------
+tname <- 'VAT'
+lname <- 'LN'
+
+tdat <- cbind(tdat, name = tname)
+ldat <- cbind(ldat, name = lname)
+
+## --- combine into list ------------------------------------------------------------------------------------------
+sl <- list(tdat, ldat)
+names(sl) <- c(tname, lname)
+
+## --- generate replicate stats -----------------------------------------------------------------------------------
+library(dplyr)
+library(matrixStats)
+sl.stats <- lapply(sl, row_stats)
+
+## --- plot ------------------------------------------------------------------------------------------------------
+library(reshape2)
+library(ggplot2)
+library(scales)
+sl.stats.m <- melt(sl.stats, id.vars = c('GeneSymbol','name','Mean','SD','CV'))
+sl.stats.m <- sl.stats.m[-6]
+
+# plot cv vs log2 mean
+p <- ggplot(sl.stats.m, aes(x=Mean, y=CV))
+# set cv line to draw
+cut <- 0.06
+p + 
+  geom_point(size = 0.6, alpha = 0.2) +
+  facet_wrap(~ name) + 
+  scale_x_continuous(breaks = pretty_breaks(), limits = 
+                       c(round(min(sl.stats.m$Mean)),round(max(sl.stats.m$Mean)))) +
+  xlab("Mean Expression (log2)") + 
+  geom_hline(yintercept = 0.06, color = "red") +
+  ggtitle(paste('CV vs log2 mean ','cv line = ',cut,sep="")) +
+  theme_bw()
+
+# save
+path <- '/Volumes/JD_WD2/JRD_CBDMLab/JRD_CBDM_public_seqanalyses/Microarray/GCT_given/working/'
+ggsave(file = paste0(path,tissue_name,'.repcv_vs_mean','.pdf'), width = 8, height = 4)
+
+
+##  
+```
+<br>  
+
+
+#### Fold-change plots
+```{r fcplots}
+mean.cv <- data.frame(GeneSymbol = sl.stats[[1]]$GeneSymbol,
+                   Tissue_mean = sl.stats[[1]]$Mean, 
+                   Lymphoid_mean = sl.stats[[2]]$Mean,
+                   Tissue_cv = sl.stats[[1]]$CV,
+                   Lymphoid_cv = sl.stats[[2]]$CV)
+
+# set cutoffs
+mean <- 100
+cv <- 0.06
+
+# filter by mean
+
+mean.fil <- 
+
+```
+<br>
+
+
+#### Set cutoffs and generate DEG
+```{r DEG}
+```
+<br> 
+
+
+
+
+
+
+
+
+
+
+
