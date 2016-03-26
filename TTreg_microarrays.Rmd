@@ -10,6 +10,7 @@ last modified: `r Sys.Date()`
 
 #### README
 + this document contains code and explanation for an analysis of tissue-Treg gene expression microarray data
++ ran the same pipeline for each Tissue vs. Lymphoid comparison, only changed code if # of replicates changed
 <br>    
 
 
@@ -21,6 +22,7 @@ opts_chunk$set(echo=F, eval=F, warning=F, message=F)
 ```
 <br>    
 
+
 Github
 https://github.com/jdis24/ATAC.git
 <br>    
@@ -31,14 +33,18 @@ https://github.com/jdis24/ATAC.git
 + trim .gct so that it only contains one set of tissue samples and one set of lymphoid samples
 + put tissue columns before lymphoid
 + [following steps done in R]
++ edit pipeline script for number of replicates 
 + import .gct file into R
 + collapse duplicate probes by median expression (CBDM code)
 + generate summary stats and plots for each sample: rep mean, rep cv, (dplyr)
-+ filter by min expr >100 in >=1 sample and replicate cv < 0.x in all samples
++ filter by min mean expr >100 in >=1 sample and replicate cv < 0.06 in all samples (dplyr)
 + calculate fold-change: tissue vs spleen
 + generate FC plots: expr vs expr, p vs fc, fc vs mean (ggplot2)
++ [following step done in Multplot]
 + set FC and p-value cutoffs and generate [d]ifferentially [e]xpressed [g]enes (DEG) (Multiplot)
-+ annotate DEG (clusterProfiler)
++ [following steps done in R]
++ import DEG list 
++ annotate DEG list with Gene Ontologies(clusterProfiler)
 <br>    
 
 
@@ -58,6 +64,20 @@ read.gct <- function(datafile="") {
   return(x)
 }
 
+
+####### ---------------------------- #######
+#######      WRITE GCT FILE          #######
+####### ---------------------------- #######
+write.gct <- function(dataset, filename) {
+  EOL = "\n"
+  h1 = c("#1.2", EOL)
+  h2 = c(nrow(dataset), "\t", ncol(dataset)-2, EOL)
+  h3 = c(paste(colnames(dataset), collapse="\t"), EOL)
+  cat(h1, file=filename, append=F, sep="")
+  cat(h2, file=filename, append=T, sep="")
+  cat(h3, file=filename, append=T, sep="")
+  write.table(dataset, file=filename, sep="\t", append=TRUE, quote=FALSE, col.names=FALSE, row.names=FALSE, eol=EOL)
+}
 
 
 ###################################
@@ -132,10 +152,10 @@ row_stats <- function(df) {
 #### Import gct file and collapse duplicate probes
 ```{r collapse_dups}
 ## --- set tissue name ------------------------------------------------------------------------------------------
-tissue_name <- 'fat'
+tissue_name <- 'vat'
 
 ## --- read gct --------------------------------------------------------------------------------------------------
-path <- '/Volumes/JD_WD2/JRD_CBDMLab/JRD_CBDM_public_seqanalyses/Microarray/GCT_given/working/'
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/TTregGE/gct/"
 file <- paste0(tissue_name,'.gct')
 
 gct <- read.gct(datafile = paste0(path,file)) 
@@ -143,7 +163,7 @@ gct <- read.gct(datafile = paste0(path,file))
 ## --- collapse probes -------------------------------------------------------------------------------------------
 gct_coll <- collapseDataset(gct = gct)
 
-# remove first two columns
+# remove first column
 gct_coll <- gct_coll[-1]
 
 ## --- write csv -------------------------------------------------------------------------------------------------
@@ -162,14 +182,14 @@ write.csv(gct_coll, file = paste0(path,tissue_name,'.collapsed','.csv'), row.nam
 # melt the list
 # generate plots, facet on SampleID
 ## --- import file ------------------------------------------------------------------------------------------------
-path <- '/Volumes/JD_WD2/JRD_CBDMLab/JRD_CBDM_public_seqanalyses/Microarray/GCT_given/working/'
-tissue_name <- 'fat'
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/TTregGE/gct/"
+tissue_name <- 'vat'
 dat <- read.csv(file = paste0(path,tissue_name,'.collapsed','.csv'))
 
 
 ## --- divide samples ---------------------------------------------------------------------------------------------
-tdat <- data.frame(dat[1:3])
-ldat <- data.frame(dat[c(1,4:5)])
+tdat <- data.frame(dat[1:4])
+ldat <- data.frame(dat[c(1,5:7)])
 
 ## --- add sample ID  --------------------------------------------------------------------------------------------
 tname <- 'VAT'
@@ -194,53 +214,162 @@ library(scales)
 sl.stats.m <- melt(sl.stats, id.vars = c('GeneSymbol','name','Mean','SD','CV'))
 sl.stats.m <- sl.stats.m[-6]
 
-# plot cv vs log2 mean
-p <- ggplot(sl.stats.m, aes(x=Mean, y=CV))
+## plot cv vs log2 mean
 # set cv line to draw
-cut <- 0.06
+cv <- 0.075
+
+# add labels for specific genes with high CV
+cdat <- sl.stats.m # make a copy of dat to use for annotating
+cdat$names <- cdat$GeneSymbol # add column of names 
+#idx <- cdat$names %in% c("Areg","Il10","Fosb","Pcsk1","Atf3","Ccr1","Ccr2","Pparg") # populate names with specific annotations
+highcv <- as.character(cdat[cdat$CV > 0.2,"GeneSymbol"]) # populate names with high cv probes
+idx <- cdat$names %in% highcv
+cdat$names[!idx] <- NA # set all other rows to NA
+
+# plot
+p <- ggplot(cdat, aes(x=Mean,y=CV))
 p + 
   geom_point(size = 0.6, alpha = 0.2) +
   facet_wrap(~ name) + 
-  scale_x_continuous(breaks = pretty_breaks(), limits = 
-                       c(round(min(sl.stats.m$Mean)),round(max(sl.stats.m$Mean)))) +
+  scale_x_continuous(breaks=pretty_breaks()) +
   xlab("Mean Expression (log2)") + 
-  geom_hline(yintercept = 0.06, color = "red") +
+  geom_hline(yintercept = cv, color = "red") +
   ggtitle(paste('CV vs log2 mean ','cv line = ',cut,sep="")) +
+  geom_text(aes(x=Mean+0.5,label=names), size=2, hjust=0, color="red") +
   theme_bw()
 
 # save
-path <- '/Volumes/JD_WD2/JRD_CBDMLab/JRD_CBDM_public_seqanalyses/Microarray/GCT_given/working/'
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/TTregGE/gct/"
 ggsave(file = paste0(path,tissue_name,'.repcv_vs_mean','.pdf'), width = 8, height = 4)
-
-
-##  
 ```
 <br>  
 
 
-#### Fold-change plots
+#### Filter by mean and cv
 ```{r fcplots}
+# create df of expr values for each sample with means and cvs
 mean.cv <- data.frame(GeneSymbol = sl.stats[[1]]$GeneSymbol,
-                   Tissue_mean = sl.stats[[1]]$Mean, 
-                   Lymphoid_mean = sl.stats[[2]]$Mean,
+                      Tissue_exp_r1 = dat[2],
+                      Tissue_exp_r2 = dat[3],
+                      Tissue_exp_r3 = dat[4],
+                      Lymphoid_exp_r1 = dat[5],
+                      Lymphoid_exp_r2 = dat[6],
+                      Lymphoid_exp_r3 = dat[7],
+                   Tissue_mean = rowMeans(dat[2:4]), 
+                   Lymphoid_mean = rowMeans(dat[5:7]),
                    Tissue_cv = sl.stats[[1]]$CV,
-                   Lymphoid_cv = sl.stats[[2]]$CV)
+                   Lymphoid_cv = sl.stats[[2]]$CV
+                   )
 
 # set cutoffs
 mean <- 100
-cv <- 0.06
+cv <- 0.075
 
-# filter by mean
+# filter by cv only
+library(dplyr)
+cv.fil <- filter(mean.cv, Tissue_cv < cv & Lymphoid_cv < cv)
 
-mean.fil <- 
+# filter by mean only
+library(dplyr)
+mean.fil <- filter(mean.cv, Tissue_mean > mean | Lymphoid_mean > mean)
 
+# then filter by mean and cv 
+mean.cv.fil <- filter(mean.fil, Tissue_cv < cv & Lymphoid_cv < cv)
+
+# export as csv
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/TTregGE/gct/"
+tissue_name <- 'fat'
+write.csv(mean.cv.fil, file = paste0(path,tissue_name,'.mean.cv.fil','.csv'), row.names=F)
+
+# export as gct
+mean.cv.fil.gct <- mean.cv.fil[1:5]
+ID <- paste('ID',1:nrow(mean.cv.fil), sep="")
+mean.cv.fil.gct <- cbind(ID, mean.cv.fil.gct)
+write.gct(mean.cv.fil.gct, filename = paste0(path,tissue_name,'.mean.cv.fil','.gct'))
 ```
 <br>
 
 
-#### Set cutoffs and generate DEG
-```{r DEG}
+#### Plot fold-change
+```{r fc_plots}
+## --- import file ------------------------------------------------------------------------------------------------
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/TTregGE/gct/"
+tissue_name <- 'fat'
+dat <- read.csv(file = paste0(path,tissue_name,'.collapsed','.csv'))
+
+## --- append FC values ------------------------------------------------------------------------------------------------
+
+dat.fc <- data.frame(mean.cv.fil, 
+                     FC = mean.cv.fil$Tissue_mean / mean.cv.fil$Lymphoid_mean)
+
+## -- plot FC --------------------------------------------------------------------------------------------
+library(reshape2)
+library(ggplot2)
+library(scales)
+
+# set plot annotations
+fc <- 2 # set FC cutoff
+tis.fc2 <- paste('Tissue = ',nrow(dat[dat.fc$FC >= fc,]),sep="")
+lymph.fc2 <- paste('Lymph = ', nrow(dat[dat.fc$FC <= (1/fc),]), sep="")
+
+# plot annotated expr vs expr
+p <- ggplot(dat.fc, aes(x=log(Tissue_mean,2), y=log(Lymphoid_mean,2), color = dat.fc$FC >=2 | dat.fc$FC <= (1/2)))
+p + geom_point(size=0.5, alpha = 0.5) + 
+  scale_y_continuous(breaks = pretty_breaks(), limits = 
+                       c(min(log(dat.fc$Tissue_mean,2)),max(log(dat.fc$Tissue_mean,2)))) + 
+  scale_x_continuous(breaks = pretty_breaks(), limits = 
+                       c(min(log(dat.fc$Tissue_mean,2)),max(log(dat.fc$Tissue_mean,2)))) +
+  scale_color_manual(values= c("black","red"), guide=F) + 
+  annotate('text', label = tis.fc2, x = min(log(dat.fc$Tissue_mean,2))+1, y=max(log(dat.fc$Lymphoid_mean,2))-1) +
+  annotate('text', label = lymph.fc2, x = min(log(dat.fc$Tissue_mean,2))+1, y=max(log(dat.fc$Lymphoid_mean,2))-2) +
+  theme_bw() 
+# save
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/TTregGE/gct/"
+name <- paste0(tissue_name,'.','FC',fc)
+ggsave(file = paste0(path,name, '.expr.scatter','.pdf'), width=4, height =4)
+
+
+
+# plot FC vs mean across all samples
+dat.fc$all_mean <- rowMeans(dat.fc[2:5])
+p <- ggplot(dat.fc, aes(x=log(all_mean,2), y = log(FC,2), color = dat.fc$FC >=2 | dat.fc$FC <= (1/2)))
+p + geom_point(size=0.5, alpha = 0.5) + 
+  scale_x_continuous(breaks = pretty_breaks(), limits = 
+                       c(min(log(dat.fc$Tissue_mean,2)),max(log(dat.fc$Tissue_mean,2)))) +
+  scale_color_manual(values= c("black","red"), guide=F) + 
+  annotate('text', label = tis.fc2, x = min(log(dat.fc$Tissue_mean,2))+1, y=max(log(dat.fc$Lymphoid_mean,2))-1) +
+  annotate('text', label = lymph.fc2, x = min(log(dat.fc$Tissue_mean,2))+1, y=max(log(dat.fc$Lymphoid_mean,2))-2) +
+  ylab("Tissue vs. Lymphoid (log2 FC)") + 
+  xlab("Mean Expression All Samples (log2)") +
+  theme_bw() 
+ggsave(file = paste0(path,name, '.MA','.pdf'), width=4, height =4)
+
+
+
+# plot FC vs mean across each sample
+# get into shape
+dat.fc.m <- dat.fc[,c("GeneSymbol","Tissue_mean","Lymphoid_mean","FC")]
+dat.fc.m <- melt(melt, id.vars=c('GeneSymbol','FC'), value.name = 'Mean')
+
+# plot FC vs mean of each sample
+p <- ggplot(dat.fc.m, aes(x=log(Mean,2), y = log(FC,2)))
+p + geom_point(size=0.5, alpha = 0.5) + 
+  scale_x_continuous(breaks = pretty_breaks(), limits = 
+                       c(min(log(dat.fc$Tissue_mean,2)),max(log(dat.fc$Tissue_mean,2)))) +
+  ylab("Tissue vs. Lymphoid (log2 FC)") + 
+  xlab("Mean Expression (log2)") +
+  facet_wrap(~variable) + 
+  theme_bw()
+ggsave(file = paste0(path,name, '.sampleMA','.pdf'), width=6, height =4)
+            
 ```
+<br> 
+
+
+#### Set cutoffs and generate DEG
++ import filtered .gct and .cls into multiplot
++ export gene list FC >=2, p-value <= 0.05 
+
 <br> 
 
 
