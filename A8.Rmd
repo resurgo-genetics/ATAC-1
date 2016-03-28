@@ -25,4 +25,183 @@ opts_chunk$set(echo=F, eval=F, warning=F, message=F)
 
 Github
 https://github.com/jdis24/ATAC.git
-<br>    
+<br> 
+
+
+#### Questions answered by plots
++ are there differences between results of homer factor and dnase peak-calling modes?
+
+
+
+#### Pseudo
+**call peaks**
++ [code for these steps is in "ATAC_peaks.Rmd"]
++ for each sample, call peaks in each replicate (homer factor and dnase modes)
++ copied peak calling results from Orchestra ATAC folders for each batch to folder for this analysis
++ [code for all subsequent steps is in this document]
+**compare results of dnase and factor modes for each replicate**
++ extract these vectors from list of filenames: Tissue, CellType, SampleName, SampleID, Replicate
++ loop over list of 
+
+
+**merge results of dnase and factor modes for each replicate**
++ homer, with code copied heres
+
+**QC, get read counts, filter**
++ merge results  of dnase and factor modes into single peakset for each replicate (homer)
++ merge replicate peaksets,keeping all, but retain whether peak was called in either or both (homer)
++ for each replicate, count reads in merged peakset, normalized to total library size (ChIPQC)
++ scatterplot replicates with r2
++ filter for peaks called in both replicates (using homer or using min rpkm?)
++ export .csv files of peaks and counts
+
+
+#### Desired plots:
+pre-replicate merge
+master table: cell_number, total reads, uniquely aligned, duplicated, %M, final, avg frag length, # peaks, % RIP, 
+table w/ # reads in peaks (csv, xtable?)
+scatterplot total # vs reads in peaks
+table w/ # peaks at different thresholds (csv, xtable?)
+boxplot variation in peak # at different thresholds
+final table of peaks at desired threshold
+**colors** 
+brewer.pal(10, "Spectral")
+incorporate sample labels 
+<br> 
+
+
+#### Compare results of dnase and factor modes for each replicate
+```{r dnase_vs_factor}
+# path to peak files
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A8-all-samples/peaks/dnaseMode/"
+
+# get filenames
+fn <- list.files(path = path, pattern = ".txt")
+
+#### -- extract sample information from filenames ----------------------------------------------------------------
+# tissue
+tissue1 <- lapply(fn, strsplit, split="_")
+tissue <- unlist(lapply(tissue1, function(x) x[[1]][[1]]))
+
+# celltype
+ct1 <- lapply(fn, strsplit, split="_rep*")
+ct2 <- lapply(ct1, function(x) x[[1]][[1]])
+ct3 <- list()
+for (i in 1:length(ct2)) {
+  if (grepl("Treg",ct2[[i]])) {
+    ct3[i]<- substr(ct2[[i]], start=nchar(ct2[[i]])-3,stop=nchar(ct2[[i]]))
+  } else
+    if (grepl("Tconv",ct2[[i]])) {
+      ct3[i] <- substr(ct2[[i]], start=nchar(ct2[[i]])-4,stop=nchar(ct2[[i]]))
+    }
+    else
+    ct3[i]<- substr(ct2[[i]], start=nchar(ct2[[i]])-2, stop=nchar(ct2[[i]]))
+}
+celltype <- unlist(ct3)
+
+# sample name
+samplename1 <- unlist(lapply(fn, strsplit, ".peaks*"))
+samplename <- samplename1[grep(".dnase.txt",samplename1, invert=T)]
+
+# sample ID
+sampleid1 <- sapply(fn, strsplit, ".rep")
+sampleid <- unlist(lapply(sampleid1, function(x) x[[1]]))
+sampleid <- unname(sampleid)
+
+# replicate
+reps1 <- sapply(fn, strsplit, "_rep*")
+reps2 <- sapply(reps1, function(x) strsplit(x[[2]], ".peaks"))
+reps3 <- as.character(sapply(reps2, function(x) x[[1]]))
+reps4 <- gsub("1.2","1",reps3)
+reps <- gsub("3","2",reps4)
+
+# temp table
+table <- data.frame(Tissue = tissue, CellType = celltype, SampleName = samplename, SampleID = sampleid,
+                    Replicate = reps)
+
+
+#### -- extract summary info from dnase peaks --------------------------------------------------------------------
+library(gsubfn)
+
+# store filenames with extensions
+fn <- list.files(path = path, pattern = ".txt", full.names=T)
+
+# functions to read peak number from homer output file
+extract_peak_info <- function(file_list) {
+  peak_numbers <- list()
+  peak_numbers <- unlist(lapply(file_list, read_peak_number), use.names=F)
+  
+  total_reads <- list()
+  total_reads <- unlist(lapply(file_list, read_total_reads), use.names=F)
+}
+
+
+
+read_peak_number <- function(file) {
+  # read in lines based on pattern matching and  
+  # extract numeric value following string
+  read.pattern(file = file, text = file, pattern = "total peaks = *(\\d+)")
+}
+
+extract_peak_info <- function(file) {
+  # read in lines based on pattern matching and  
+  # extract numeric value following string
+  peak_numbers <- read.pattern(file = file, text = file, pattern = "total peaks = *(\\d+)")
+  
+  total_reads <- read.pattern(file = file, text = file, )
+  
+  fragment_length <- read.pattern(file = file, text = file, )
+  
+  reads_in_peaks <- read.pattern(file = file, text = file, )
+  
+  rip <- read.pattern(file = file, text = file, )
+  
+  fdr_read_threshold <- read.pattern(file = file, text = file, )
+}
+# what happens if you lapply this over a peak file list?
+
+
+# retrieve peak_numbers
+peak_numbers <- unlist(lapply(fn, read_peak_number), use.names=F)
+
+
+# retrieve total reads
+# retrieve reads in peaks
+# retrieve RIP as %
+# retrieve FDR tag threshold
+
+
+#### -- combine into summary table ------------------------------------------------------------------------------
+
+# temp table
+mode <- "dnase"
+batch##
+table <- data.frame(Tissue = tissue, 
+                    CellType = celltype, 
+                    SampleName = samplename, 
+                    SampleID = sampleid,
+                    Replicate = reps, 
+                    Mode = mode,
+                    Total_peaks = peak_numbers)
+
+#### -- repeat for facto mode files ------------------------------------------------------------------------------
+
+
+## get other data from peak table 
+size avg, stdev, variance, score median, stdev,  var
+
+
+```
+<br>
+
+
+#### Merge results of dnase and factor modes for each replicate
++ Orchestra, homer 4.6
+```{r merge_dnase_factor, engine = "bash"}
+# load module 
+
+```
+<br>
+
+
+
