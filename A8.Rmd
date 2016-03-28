@@ -1,0 +1,28 @@
+---
+title: "A8-ATAC-allsamples"
+author: "JRD"
+date: "March 28, 2016"
+output: html_document
+---
+
+last modified: `r Sys.Date()`
+<br>    
+
+#### README
++ this document contains code and explanation for an analysis comparing Colon, Muscle, Splenic and VAT Treg
++ for details on how the input files used in this analysis were generated, see *ATAC_mapping.Rmd* and *ATAC_peaks.Rmd*
++ **difference between A5 and A7 is latter filters peaks by both min signal and replicate CV**
+<br>    
+
+
+#### R Markdown Specifications
+Set global options
+```{r setoptions, echo=F}
+library(knitr)
+opts_chunk$set(echo=F, eval=F, warning=F, message=F)
+```
+<br>    
+
+Github
+https://github.com/jdis24/ATAC.git
+<br>    
