@@ -30,7 +30,7 @@ https://github.com/jdis24/ATAC.git
 
 #### Questions answered by plots
 + are there differences between results of homer factor and dnase peak-calling modes?
-
++ how well do identification and signal distribution of peaks correlate across biological replicates?
 
 
 #### Pseudo
@@ -45,7 +45,7 @@ https://github.com/jdis24/ATAC.git
 
 
 **merge results of dnase and factor modes for each replicate**
-+ homer, with code copied heres
++ homer, with code copied here
 
 **QC, get read counts, filter**
 + merge results  of dnase and factor modes into single peakset for each replicate (homer)
@@ -126,39 +126,34 @@ library(gsubfn)
 # store filenames with extensions
 fn <- list.files(path = path, pattern = ".txt", full.names=T)
 
-# functions to read peak number from homer output file
-extract_peak_info <- function(file_list) {
-  peak_numbers <- list()
-  peak_numbers <- unlist(lapply(file_list, read_peak_number), use.names=F)
-  
-  total_reads <- list()
-  total_reads <- unlist(lapply(file_list, read_total_reads), use.names=F)
-}
-
-
-
-read_peak_number <- function(file) {
-  # read in lines based on pattern matching and  
-  # extract numeric value following string
-  read.pattern(file = file, text = file, pattern = "total peaks = *(\\d+)")
-}
-
+# function to read peak number from homer peak output file
 extract_peak_info <- function(file) {
   # read in lines based on pattern matching and  
-  # extract numeric value following string
-  peak_numbers <- read.pattern(file = file, text = file, pattern = "total peaks = *(\\d+)")
+  # extract numeric value following strings
+  total_peaks <- as.numeric(read.pattern(file = file, text = file, pattern = "total peaks = *(\\d+)"))
   
-  total_reads <- read.pattern(file = file, text = file, )
+  total_reads <- as.numeric(read.pattern(file = file, text = file, pattern = "Total tags = *(\\d+)"))
   
-  fragment_length <- read.pattern(file = file, text = file, )
+  fragment_length <- as.numeric(read.pattern(file = file, text = file, pattern = "fragment length = *(\\d+)"))
   
-  reads_in_peaks <- read.pattern(file = file, text = file, )
+  reads_in_peaks <- as.numeric(read.pattern(file = file, text = file, pattern = "Total tags in peaks = *(\\d+)"))
   
-  rip <- read.pattern(file = file, text = file, )
+  rip_pct <- as.numeric(read.pattern(file = file, text = file, pattern = "Approximate IP efficiency = *(\\d+.\\d+)"))
   
-  fdr_read_threshold <- read.pattern(file = file, text = file, )
+  fdr_read_threshold <- as.numeric(read.pattern(file = file, text = file, pattern = "FDR tag threshold = *(\\d+)"))
+  
+  output <- c(total_peaks = total_peaks, 
+                 total_reads = total_reads,
+                 fragment_length = fragment_length,
+                 reads_in_peaks = reads_in_peaks,
+                 rip_pct = rip_pct,
+                 fdr_read_threshold = fdr_read_threshold)
+  return(output)
 }
-# what happens if you lapply this over a peak file list?
+# sapply the function over the vector of peak filenames
+peakStats <- t(sapply(fn, extract_peak_info, USE.NAMES = F))
+
+
 
 
 # retrieve peak_numbers
@@ -175,14 +170,16 @@ peak_numbers <- unlist(lapply(fn, read_peak_number), use.names=F)
 
 # temp table
 mode <- "dnase"
-batch##
+batch <- c("1","2","1","2","2","2","1","2","1","2","2","2","1","1","2","2","2","2","1","1")
 table <- data.frame(Tissue = tissue, 
                     CellType = celltype, 
                     SampleName = samplename, 
                     SampleID = sampleid,
                     Replicate = reps, 
+                    Batch = batch,
                     Mode = mode,
-                    Total_peaks = peak_numbers)
+                    peakStats,
+                    )
 
 #### -- repeat for facto mode files ------------------------------------------------------------------------------
 
