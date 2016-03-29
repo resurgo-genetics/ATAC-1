@@ -41,7 +41,10 @@ https://github.com/jdis24/ATAC.git
 + [code for all subsequent steps is in this document]
 **compare results of dnase and factor modes for each replicate**
 + extract these vectors from list of filenames: Tissue, CellType, SampleName, SampleID, Replicate
-+ loop over list of 
++ loop over each output file and extract summary stats: total peaks, total reads, frag length, reads in peaks, rip%, fdr threshold reads
++ loop over each output file and extract peak stats: mean / median / stdev / var of width,score
++ add to summary table
++ plots
 
 
 **merge results of dnase and factor modes for each replicate**
@@ -75,10 +78,10 @@ incorporate sample labels
 # path to peak files
 path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A8-all-samples/peaks/dnaseMode/"
 
-# get filenames
+#### -- extract sample information from filenames ----------------------------------------------------------------
+# get filenames to use for extracting sample info
 fn <- list.files(path = path, pattern = ".txt")
 
-#### -- extract sample information from filenames ----------------------------------------------------------------
 # tissue
 tissue1 <- lapply(fn, strsplit, split="_")
 tissue <- unlist(lapply(tissue1, function(x) x[[1]][[1]]))
@@ -115,18 +118,19 @@ reps3 <- as.character(sapply(reps2, function(x) x[[1]]))
 reps4 <- gsub("1.2","1",reps3)
 reps <- gsub("3","2",reps4)
 
-# temp table
-table <- data.frame(Tissue = tissue, CellType = celltype, SampleName = samplename, SampleID = sampleid,
-                    Replicate = reps)
-
 
 #### -- extract summary info from dnase peaks --------------------------------------------------------------------
 library(gsubfn)
+library(dplyr)
 
 # store filenames with extensions
 fn <- list.files(path = path, pattern = ".txt", full.names=T)
 
-# function to read peak number from homer peak output file
+# also read into list
+fl <- list()
+fl <- lapply(fn, read.table)
+
+# function to read peak totals and parameters from homer peak output file header
 extract_peak_info <- function(file) {
   # read in lines based on pattern matching and  
   # extract numeric value following strings
@@ -150,46 +154,120 @@ extract_peak_info <- function(file) {
                  fdr_read_threshold = fdr_read_threshold)
   return(output)
 }
-# sapply the function over the vector of peak filenames
-peakStats <- t(sapply(fn, extract_peak_info, USE.NAMES = F))
 
 
+#### -- extract peak stats from dnase peaks --------------------------------------------------------------------
 
+# set column names
+headers1 <- read.table(fn[[1]], skip=33, nrow=1, comment.char="", sep="\t")
+headers <- as.character(unlist(headers1))
 
-# retrieve peak_numbers
-peak_numbers <- unlist(lapply(fn, read_peak_number), use.names=F)
+for (i in 1:length(fl)) {
+  names(fl[[i]]) <- headers
+}
 
+# function to calculate peak summary stats from homer peak table
+extract_peak_stats <- function(df) {
+  df2 <- df %>%
+    mutate_(PeakWidth = df$end - df$start)
+  
+ output <- df2 %>% 
+    summarise(PeakWidthMean = mean(PeakWidth),
+              PeakWidthMedian = median(PeakWidth),
+              PeakWidthSD = sd(PeakWidth),
+              PeakWidthVar = var(PeakWidth),
+              PeakRpmMean = mean(`Normalized Tag Count`),
+              PeakRpmMedian = median(`Normalized Tag Count`),
+              PeakRpmSD = sd(`Normalized Tag Count`),
+              PeakRpmVar = var(`Normalized Tag Count`))
+}
 
-# retrieve total reads
-# retrieve reads in peaks
-# retrieve RIP as %
-# retrieve FDR tag threshold
+# sapply the functions over the vector of peak filenames
+peakStats1 <- t(sapply(fn, extract_peak_info, USE.NAMES = F))
+peakStats2 <- t(sapply(fl, extract_peak_stats, USE.NAMES = F))
 
-
-#### -- combine into summary table ------------------------------------------------------------------------------
-
-# temp table
+# combine into summary table 
 mode <- "dnase"
-batch <- c("1","2","1","2","2","2","1","2","1","2","2","2","1","1","2","2","2","2","1","1")
-table <- data.frame(Tissue = tissue, 
+table1 <- data.frame(Tissue = tissue, 
                     CellType = celltype, 
                     SampleName = samplename, 
                     SampleID = sampleid,
                     Replicate = reps, 
-                    Batch = batch,
                     Mode = mode,
-                    peakStats,
+                    peakStats1,
+                    peakStats2
                     )
 
-#### -- repeat for facto mode files ------------------------------------------------------------------------------
+#### -- repeat for factor mode peaks ------------------------------------------------------------------------------
+# change path
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A8-all-samples/peaks/factorMode/"
+
+# store filenames with extensions
+fn <- list.files(path = path, pattern = ".txt", full.names=T)
+
+# also read into list
+fl <- list()
+fl <- lapply(fn, read.table)
+
+# set column names
+headers1 <- read.table(fn[[1]], skip=34, nrow=1, comment.char="", sep="\t")
+headers <- as.character(unlist(headers1))
+
+for (i in 1:length(fl)) {
+  names(fl[[i]]) <- headers
+}
+
+# sapply the function over the vector of peak filenames
+peakStats3 <- t(sapply(fn, extract_peak_info, USE.NAMES = F))
+peakStats4 <- t(sapply(fl, extract_peak_stats, USE.NAMES = F))
 
 
-## get other data from peak table 
-size avg, stdev, variance, score median, stdev,  var
+#### -- combine into summary table ------------------------------------------------------------------------------
+mode <- "factor"
+table2 <- data.frame(Tissue = tissue, 
+                    CellType = celltype, 
+                    SampleName = samplename, 
+                    SampleID = sampleid,
+                    Replicate = reps, 
+                    Mode = mode,
+                    peakStats3,
+                    peakStats4
+                    )
 
+#### -- combine results of dnase and factor modes into single table --------------------------------------------
+peak_stat_table <- rbind(table1,table2)
+
+# export
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A8-all-samples/peaks/"
+save(peak_stat_table, file = paste0(path,"peak_stat_table",".RDa"))
+# fix write.csv
+write.csv(peak_stat_table, file = paste0(path,"peak_stat_table",".csv"), row.names = F)
 
 ```
 <br>
+
+
+#### Summary plots
+```{r dnase_factor_plots}
+library(reshape2)
+library(ggplot2)
+
+#### -- tables of total peaks and reads in peaks -----------------------------------------------------------------
+# dnase mode
+
+
+# factor mode
+
+
+
+# plot of total # peaks called in dnase vs factor
+# color by sampleID
+# label with Tissue? 
+
+
+
+```
+
 
 
 #### Merge results of dnase and factor modes for each replicate
