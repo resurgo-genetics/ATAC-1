@@ -234,38 +234,77 @@ table2 <- data.frame(Tissue = tissue,
                     peakStats4
                     )
 
+
 #### -- combine results of dnase and factor modes into single table --------------------------------------------
 peak_stat_table <- rbind(table1,table2)
 
-# export
+# convert numeric columns, which are lists, into atomic vectors
+peak_stat_table[13:20] <- data.frame(lapply(peak_stat_table[13:20], as.numeric))
+
+
+#### -- export -------------------------------------------------------------------------------------------------
 path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A8-all-samples/peaks/"
 save(peak_stat_table, file = paste0(path,"peak_stat_table",".RDa"))
 # fix write.csv
-write.csv(peak_stat_table, file = paste0(path,"peak_stat_table",".csv"), row.names = F)
-
+write.csv(test, file = paste0(path,"peak_stat_table",".csv"), row.names = F)
 ```
 <br>
 
 
 #### Summary plots
 ```{r dnase_factor_plots}
+library(dplyr)
+library(tidyr)
 library(reshape2)
+library(scales)
 library(ggplot2)
+library(RColorBrewer)
 
-#### -- tables of total peaks and reads in peaks -----------------------------------------------------------------
-# dnase mode
+#### -- reshape data table ----------------------------------------------------------------------------------
+# copy peak table
+dat <- peak_stat_table
+
+# convert read columns to K and M
+dat$total_peaks <- dat$total_peaks/1000
+dat$total_reads <- dat$total_reads/1000000
+dat$reads_in_peaks <- dat$reads_in_peaks/1000000
+
+# extract dnase stats to table1
+t1 <- dat[dat$Mode=="dnase",]
+# melt
+t1melted <- melt(t1, id.vars = c(names(t1[1:6])), value.name = "d_value")
+
+# extract factor stats to table2
+t2 <- dat[dat$Mode=="factor",]
+# melt
+t2melted <- melt(t2, id.vars = c(names(t2[1:6])), value.name = "f_value")
+
+# remove mode from t1
+t1melted <- subset(t1melted, select = -Mode)
+# append factor values
+t1melted$f_value <- t2melted$f_value
+
+# rename
+dat2 <- t1melted
 
 
-# factor mode
+#### -- plot multiple stats for dnase vs factor modes -----------------------------------------------------------
+g <- ggplot(dat2, aes(x=d_value, y=f_value, color = SampleID)) 
 
-
-
-# plot of total # peaks called in dnase vs factor
-# color by sampleID
-# label with Tissue? 
-
-
-
+g +
+  geom_point() + 
+  facet_wrap(~variable, scales = c('free')) + 
+  scale_x_continuous(breaks=pretty_breaks()) + 
+  scale_y_continuous(breaks=pretty_breaks()) + 
+  xlab("DNAse Mode") + 
+  ylab("Factor Mode") +
+  scale_color_brewer(palette = "Spectral") +
+  theme_bw() +
+  theme(legend.position = "top") 
+ 
+# save
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A8-all-samples/plots/"
+ggsave(file = paste0(path,'dnase_vs_factor','.pdf'), width = 14, height = 12)
 ```
 
 
