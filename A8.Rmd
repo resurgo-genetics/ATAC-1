@@ -444,6 +444,7 @@ ggsave(paste0(path,"dnase_factor_pct_total.pdf"), width=8, height = 7)
 
 #### Compare sample replicates by merging peaks 
 + Orchestra, homer 4.6
++ separate analyses, changing max peak distance to merge
 ```{r }
 # load module 
 module load seq/homer/4.6
@@ -459,10 +460,10 @@ mergePeaks Mus_Treg_rep1.peaks.homer.txt Mus_Treg_rep2.peaks.homer.txt -d 0 -ven
 
 ```
 <br> 
-plot corr?
 
 
 #### Stats from merging replicates
++ extract from homer output files and generate tables 
 ```{r rep_merge_stats}
 #### -- extract sample information from filenames ----------------------------------------------------------------
 # set path
@@ -758,7 +759,7 @@ path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEp
 save(rep_consistent_peaks, file = paste0(path, "reps_consistent_peaks_list",".RDa"))
 
 
-#### -- export as separate tdt files ------------------------------------------------------------------------------
+#### -- export as separate tdt files for each sample --------------------------------------------------------------
 path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A8-all-samples/peaks/final-replicate-merge/"
 
 # convert each df to bed format, [p]eak[l]ist_bed
