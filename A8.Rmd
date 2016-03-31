@@ -398,10 +398,10 @@ merge_result_table <- data.frame(SampleName =  samplename,
 
 #### -- export ---------------------------------------------------------------------------------------------------
 path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A8-all-samples/peaks/"
-save(merge_result_table, file = paste0(path,"merge_result_table,",".RDa"))
+save(merge_result_table, file = paste0(path,"mode_merge_result_table",".RDa"))
 
 # csv
-write.csv(merge_result_table, file = paste0(path,"merge_result_table",".csv"))
+write.csv(merge_result_table, file = paste0(path,"mode_merge_result_table",".csv"))
 ```
 <br>
 
@@ -422,7 +422,7 @@ load(paste0(path,"merge_result_table,",".RDa"))
 dat <- merge_result_table
 
 # melt
-datm <- melt(merge_result_table, id.vars = c(names(dat[1:7])))
+datm <- melt(dat, id.vars = c(names(dat[1:7])))
 
 # plot
 g <- ggplot(datm, aes(x=SampleName, y= value, fill=variable))
@@ -462,7 +462,7 @@ mergePeaks Mus_Treg_rep1.peaks.homer.txt Mus_Treg_rep2.peaks.homer.txt -d 0 -ven
 plot corr?
 
 
-#### Plot stats from merging replicates
+#### Stats from merging replicates
 ```{r rep_merge_stats}
 #### -- extract sample information from filenames ----------------------------------------------------------------
 # set path
@@ -475,13 +475,305 @@ fn <- list.files(path = path, pattern = ".txt")
 samplename <- unlist(lapply(fn, strsplit, ".venn.homer.txt"))
 
 
+#### -- extract total number peaks after merge ------------------------------------------------------------------
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A8-all-samples/peaks/replicates-merged-100bp/"
+
+# store filenames with extensions
+fn <- list.files(path = path, pattern = ".txt", full.names=T)
+
+# also read into list
+fl <- list()
+fl <- lapply(fn, read.table, sep="\t")
+
+# extract total number peaks 
+merged_peak_totals <- sapply(fl, nrow)
+
+
+#### -- extract peak numbers from files --------------------------------------------------------------------------
+library(gsubfn)
+library(dplyr)
+
+# set path
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A8-all-samples/peaks/replicates-merged-100bp-venn/"
+
+# store filenames with extensions
+fn <- list.files(path = path, pattern = ".txt", full.names=T)
+
+# also read into list
+fl <- list()
+fl <- lapply(fn, read.table, skip=1, sep="\t")
+
+# store column names
+headers <- c("rep2_only", "rep1_only","common","File")
+
+# name columns within list elements
+for (i in 1:length(fl)) {
+  names(fl[[i]]) <- headers
+}
+
+# extract peak numbers from each df in list
+totals <- as.data.frame(t(sapply(fl, function(x) unlist(x$common))))
+
+# name columns
+names(totals) <- c("rep2_only", "rep1_only","common")
+
+# compute totals
+totals$rep1_total <- totals$rep1_only + totals$common
+totals$rep2_total <- totals$rep2_only + totals$common
+totals$merge_total <- merged_peak_totals
+totals$pct_concordant <- (totals$common / totals$merge_total)*100
+totals$pct_rep1_only <- (totals$rep1_only / totals$merge_total)*100
+totals$pct_rep2_only <- (totals$rep2_only / totals$merge_total)*100
+
+# merge into table
+merge_result_table1 <- data.frame(SampleName =  samplename,
+                                 MergeDistanct = "100bp",
+                                 totals)
+
+
+#### repeat for 50bp distance
+#### -- extract sample information from filenames ----------------------------------------------------------------
+# set path
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A8-all-samples/peaks/replicates-merged-50bp-venn/"
+
+# read file names
+fn <- list.files(path = path, pattern = ".txt")
+
+# extract sample names
+samplename <- unlist(lapply(fn, strsplit, ".50bp.venn.homer.txt"))
+
+
+#### -- extract total number peaks after merge ------------------------------------------------------------------
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A8-all-samples/peaks/replicates-merged-50bp/"
+
+# store filenames with extensions
+fn <- list.files(path = path, pattern = ".txt", full.names=T)
+
+# also read into list
+fl <- list()
+fl <- lapply(fn, read.table, sep="\t")
+
+# extract total number peaks 
+merged_peak_totals <- sapply(fl, nrow)
+
+
+#### -- extract peak numbers from files --------------------------------------------------------------------------
+library(gsubfn)
+library(dplyr)
+
+# set path
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A8-all-samples/peaks/replicates-merged-50bp-venn/"
+
+# store filenames with extensions
+fn <- list.files(path = path, pattern = ".txt", full.names=T)
+
+# also read into list
+fl <- list()
+fl <- lapply(fn, read.table, skip=1, sep="\t")
+
+# store column names
+headers <- c("rep2_only", "rep1_only","common","File")
+
+# name columns within list elements
+for (i in 1:length(fl)) {
+  names(fl[[i]]) <- headers
+}
+
+# extract peak numbers from each df in list
+totals <- as.data.frame(t(sapply(fl, function(x) unlist(x$common))))
+
+# name columns
+names(totals) <- c("rep2_only", "rep1_only","common")
+
+# compute totals
+totals$rep1_total <- totals$rep1_only + totals$common
+totals$rep2_total <- totals$rep2_only + totals$common
+totals$merge_total <- merged_peak_totals
+totals$pct_concordant <- (totals$common / totals$merge_total)*100
+totals$pct_rep1_only <- (totals$rep1_only / totals$merge_total)*100
+totals$pct_rep2_only <- (totals$rep2_only / totals$merge_total)*100
+
+# merge into table
+merge_result_table2 <- data.frame(SampleName =  samplename,
+                                 MergeDistanct = "50bp",
+                                 totals)
+
+
+#### repeat for 0bp distance
+#### -- extract sample information from filenames ----------------------------------------------------------------
+# set path
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A8-all-samples/peaks/replicates-merged-0bp-venn/"
+
+# read file names
+fn <- list.files(path = path, pattern = ".txt")
+
+# extract sample names
+samplename <- unlist(lapply(fn, strsplit, ".0bp.venn.homer.txt"))
+
+
+#### -- extract total number peaks after merge ------------------------------------------------------------------
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A8-all-samples/peaks/replicates-merged-0bp/"
+
+# store filenames with extensions
+fn <- list.files(path = path, pattern = ".txt", full.names=T)
+
+# also read into list
+fl <- list()
+fl <- lapply(fn, read.table, sep="\t")
+
+# extract total number peaks 
+merged_peak_totals <- sapply(fl, nrow)
+
+
+#### -- extract peak numbers from files --------------------------------------------------------------------------
+library(gsubfn)
+library(dplyr)
+
+# set path
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A8-all-samples/peaks/replicates-merged-0bp-venn/"
+
+# store filenames with extensions
+fn <- list.files(path = path, pattern = ".txt", full.names=T)
+
+# also read into list
+fl <- list()
+fl <- lapply(fn, read.table, skip=1, sep="\t")
+
+# store column names
+headers <- c("rep2_only", "rep1_only","common","File")
+
+# name columns within list elements
+for (i in 1:length(fl)) {
+  names(fl[[i]]) <- headers
+}
+
+# extract peak numbers from each df in list
+totals <- as.data.frame(t(sapply(fl, function(x) unlist(x$common))))
+
+# name columns
+names(totals) <- c("rep2_only", "rep1_only","common")
+
+# compute totals
+totals$rep1_total <- totals$rep1_only + totals$common
+totals$rep2_total <- totals$rep2_only + totals$common
+totals$merge_total <- merged_peak_totals
+totals$pct_concordant <- (totals$common / totals$merge_total)*100
+totals$pct_rep1_only <- (totals$rep1_only / totals$merge_total)*100
+totals$pct_rep2_only <- (totals$rep2_only / totals$merge_total)*100
+
+# merge into table
+merge_result_table3 <- data.frame(SampleName =  samplename,
+                                 MergeDistanct = "0bp",
+                                 totals)
+
+#### -- merge all tables ---------------------------------------------------------------------------------------
+mergecompare <- rbind(merge_result_table1, merge_result_table2, merge_result_table3)
+
+
+#### -- export ---------------------------------------------------------------------------------------------------
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A8-all-samples/peaks/"
+save(mergecompare, file = paste0(path,"rep_merge_compare_table",".RDa"))
+
+# csv
+write.csv(mergecompare, file = paste0(path,"rep_merge_compare_table",".csv"))
+```
+<br>
+
+
+#### Plot stats from replicate merge
+```{r merge_rep_plots}
+library(reshape2)
+library(RColorBrewer)
+library(scales)
+library(ggplot2)
+#### -- load summary stat files from merge ------------------------------------------------------------------------
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A8-all-samples/peaks/"
+load(paste0(path,"rep_merge_compare_table",".RDa"))
+
+
+#### -- plot stacked bar graph -----------------------------------------------------------------------------------
+# copy df
+dat <- mergecompare
+
+# melt
+datm <- melt(dat, id.vars = c(names(dat[1:8])))
+
+# plot
+g <- ggplot(datm, aes(x=SampleName, y= value, fill=variable))
+g +
+  geom_bar(stat="identity", color="black") + 
+  guides(fill=guide_legend(reverse=T)) +
+  scale_fill_brewer(palette="Spectral") +
+  coord_flip() +
+  scale_x_discrete(limits=rev(levels(datm$SampleName))) + 
+  ylab("Percent of Total") +
+  geom_hline(yintercept=50, color = "black", linetype = 2) +
+  facet_wrap(~MergeDistanct) +
+  theme_bw() 
+
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A8-all-samples/plots/"
+ggsave(paste0(path,"rep_merge_compare_plot",".pdf"), width=10, height=7)
 
 ```
 <br>
 
 
 #### Filter to only keep peaks called in both replicates
-  
++ in homer merge output, information as to whether peak was unique or common is kept
++ filter for common
+```{r filter_common_peaks}
+#### -- import merged peak files into R --------------------------------------------------------------------------
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A8-all-samples/peaks/replicates-merged-100bp/"
+
+# store filenames with extensions
+fn <- list.files(path = path, pattern = ".txt", full.names=T)
+fn1 <- list.files(path = path, pattern = ".txt")
+
+
+#### -- filter for common peaks ----------------------------------------------------------------------------------
+
+# read into list
+fl <- list()
+fl <- lapply(fn, read.table, sep="\t")
+
+# set column names
+#names(dat) <- headers
+headers1 <- read.table(fn[[1]], nrow=1, comment.char="", sep="\t")
+headers <- as.character(unlist(headers1))
+
+for (i in 1:length(fl)) {
+  names(fl[[i]]) <- headers
+}
+
+# filter each df in the list to keep common peaks, by keeping rows that contain "|" pipe in `Parent files`
+rep_consistent_peaks <- lapply(fl, function(x) x[grep("\\|", x$`Parent files`),])
+
+# name the list elements to match the files
+names(rep_consistent_peaks) <- gsub("\\.homer.txt","", fn1)
+
+
+#### -- save list of peak files  ----------------------------------------------------------------------------------
+# as RDa
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A8-all-samples/peaks/final-replicate-merge/"
+save(rep_consistent_peaks, file = paste0(path, "reps_consistent_peaks_list",".RDa"))
+
+
+#### -- export as separate tdt files ------------------------------------------------------------------------------
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A8-all-samples/peaks/final-replicate-merge/"
+
+# convert each df to bed format, [p]eak[l]ist_bed
+pl_bed <- lapply(rep_consistent_peaks, function(x) {
+  x <- x[,c(2,3,4,1,5)]
+})
+
+lapply(names(pl_bed),
+       function(x) write.table(pl_bed[x], file=paste(paste0(path,x),"bed",sep="."), sep = "\t", 
+                              quote=F, row.names=F,col.names=c("#chr","start","end","name","strand")))
+
+
+
+
+```
   
   
   
