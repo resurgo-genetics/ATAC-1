@@ -259,6 +259,12 @@ library(reshape2)
 library(scales)
 library(ggplot2)
 library(RColorBrewer)
+#### -- load peak stat table --------------------------------------------------------------------------------
+# import peak stat table
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A8-all-samples/peaks/"
+file <- "peak_stat_table.RDa"
+load(paste0(path,file))
+
 
 #### -- reshape data table ----------------------------------------------------------------------------------
 # copy peak table
@@ -285,11 +291,11 @@ t1melted <- subset(t1melted, select = -Mode)
 t1melted$f_value <- t2melted$f_value
 
 # rename
-dat2 <- t1melted
+peak_stat_table_melted <- t1melted
 
 
 #### -- plot multiple stats for dnase vs factor modes -----------------------------------------------------------
-g <- ggplot(dat2, aes(x=d_value, y=f_value, color = SampleID)) 
+g <- ggplot(peak_stat_table_melted, aes(x=d_value, y=f_value, color = SampleID)) 
 
 g +
   geom_point() + 
@@ -306,16 +312,176 @@ g +
 path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A8-all-samples/plots/"
 ggsave(file = paste0(path,'dnase_vs_factor','.pdf'), width = 14, height = 12)
 ```
-
+<br>
 
 
 #### Merge results of dnase and factor modes for each replicate
 + Orchestra, homer 4.6
 ```{r merge_dnase_factor, engine = "bash"}
 # load module 
+module load seq/homer/4.6
+
+# run, write stats to separate file
+mergePeaks Vat_Treg_rep2.peaks.dnase.txt Vat_Treg_rep2.peaks.factor.txt -venn Vat_Treg_rep2.peaks.homer.venn.txt > Vat_Treg_rep2.peaks.homer.txt
+```
+<br>
+
+
+#### Stats for mode merge
+```{r merge_dnase_factor_stats}
+#### -- load summary stat files from merge ------------------------------------------------------------------------
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A8-all-samples/peaks/dnase-factor-merged-100bp-venn/"
+
+
+#### -- extract sample information from filenames ----------------------------------------------------------------
+# read file names
+fn <- list.files(path = path, pattern = ".txt")
+
+# extract sample names
+samplename <- unlist(lapply(fn, strsplit, ".peaks.homer.venn.txt"))
+
+#### -- extract total number peaks after merge ------------------------------------------------------------------
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A8-all-samples/peaks/dnase-factor-merged-100bp/"
+
+# store filenames with extensions
+fn <- list.files(path = path, pattern = ".txt", full.names=T)
+
+# also read into list
+fl <- list()
+fl <- lapply(fn, read.table, sep="\t")
+
+# extract total number peaks 
+merged_peak_totals <- sapply(fl, nrow)
+
+
+#### -- extract peak numbers from files --------------------------------------------------------------------------
+library(gsubfn)
+library(dplyr)
+
+# set path
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A8-all-samples/peaks/dnase-factor-merged-100bp-venn/"
+
+# store filenames with extensions
+fn <- list.files(path = path, pattern = ".txt", full.names=T)
+
+# also read into list
+fl <- list()
+fl <- lapply(fn, read.table, skip=1, sep="\t")
+
+# store column names
+headers <- c("factor_only", "dnase_only","common","File")
+
+# name columns within list elements
+for (i in 1:length(fl)) {
+  names(fl[[i]]) <- headers
+}
+
+# extract peak numbers from each df in list
+totals <- as.data.frame(t(sapply(fl, function(x) unlist(x$common))))
+
+# name columns
+names(totals) <- c("factor_only", "dnase_only","common")
+
+# compute totals
+totals$factor_total <- totals$factor_only + totals$common
+totals$dnase_total <- totals$dnase_only + totals$common
+totals$merge_total <- merged_peak_totals
+totals$pct_concordant <- (totals$common / totals$merge_total)*100
+totals$pct_dnase_only <- (totals$dnase_only / totals$merge_total)*100
+totals$pct_factor_only <- (totals$factor_only / totals$merge_total)*100
+
+
+#### -- merge into table ---------------------------------------------------------------------------------------
+merge_result_table <- data.frame(SampleName =  samplename,
+                                 totals)
+                                 
+
+#### -- export ---------------------------------------------------------------------------------------------------
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A8-all-samples/peaks/"
+save(merge_result_table, file = paste0(path,"merge_result_table,",".RDa"))
+
+# csv
+write.csv(merge_result_table, file = paste0(path,"merge_result_table",".csv"))
+```
+<br>
+
+
+#### Plot stats for mode merge
+```{r merge_dnase_factor_plots}
+library(reshape2)
+library(RColorBrewer)
+library(scales)
+library(ggplot2)
+#### -- load summary stat files from merge ------------------------------------------------------------------------
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A8-all-samples/peaks/"
+load(paste0(path,"merge_result_table,",".RDa"))
+
+
+#### -- plot stacked bar graph -----------------------------------------------------------------------------------
+# copy df
+dat <- merge_result_table
+
+# melt
+datm <- melt(merge_result_table, id.vars = c(names(dat[1:7])))
+
+# plot
+g <- ggplot(datm, aes(x=SampleName, y= value, fill=variable))
+g +
+  geom_bar(stat="identity", color="black") + 
+  guides(fill=guide_legend(reverse=T)) +
+  scale_fill_brewer(palette="Spectral") +
+  coord_flip() +
+  scale_x_discrete(limits=rev(levels(datm$SampleName))) + 
+  ylab("Percent of Total") +
+  theme_bw() 
+
+# save
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A8-all-samples/plots/"
+ggsave(paste0(path,"dnase_factor_pct_total.pdf"), width=8, height = 7)
+```
+<br>  
+
+
+#### Compare sample replicates by merging peaks 
++ Orchestra, homer 4.6
+```{r }
+# load module 
+module load seq/homer/4.6
+
+# run with default settings, write stats to separate file
+mergePeaks Mus_Treg_rep1.peaks.homer.txt Mus_Treg_rep2.peaks.homer.txt -venn Mus_Treg.venn.homer.txt > Mus_Treg.homer.txt
+
+# run, changing max peak center distance to merge = 50, rather than default = 100
+mergePeaks Mus_Treg_rep1.peaks.homer.txt Mus_Treg_rep2.peaks.homer.txt -d 50 -venn Mus_Treg.50bp.venn.homer.txt > Mus_Treg.50bp.homer.txt
+
+# run, changing max peak center distance to merge = 0, rather than default = 100
+mergePeaks Mus_Treg_rep1.peaks.homer.txt Mus_Treg_rep2.peaks.homer.txt -d 0 -venn Mus_Treg.0bp.venn.homer.txt > Mus_Treg.0bp.homer.txt
+
+```
+<br> 
+plot corr?
+
+
+#### Plot stats from merging replicates
+```{r rep_merge_stats}
+#### -- extract sample information from filenames ----------------------------------------------------------------
+# set path
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A8-all-samples/peaks/replicates-merged-100bp-venn/"
+
+# read file names
+fn <- list.files(path = path, pattern = ".txt")
+
+# extract sample names
+samplename <- unlist(lapply(fn, strsplit, ".venn.homer.txt"))
+
+
 
 ```
 <br>
 
 
-
+#### Filter to only keep peaks called in both replicates
+  
+  
+  
+  
