@@ -44,7 +44,7 @@ peak_rpm <- function(reads, peaks) {
 
 #### Function implementation ####
 # set working directory
-setwd("/groups/cbdm-db/jrd26/ATAC_crossbatch/R/temp/")
+setwd("/groups/cbdm-db/jrd26/ATAC_crossbatch/temp/")
 
 # get names of peak files
 peaks <- list.files(".", pattern = "*.bed.txt")
@@ -52,7 +52,7 @@ peaks <- list.files(".", pattern = "*.bed.txt")
 # get names of bam files
 reads <- list.files(".", pattern = "*.uniq.bam$")
 
-# for loop
+# loop over each peak/bam pair in folder
 for(i in 1:length(reads)) {
   peak_rpm(reads[i], peaks[i])
 }
