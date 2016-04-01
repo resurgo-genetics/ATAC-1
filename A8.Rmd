@@ -770,11 +770,140 @@ pl_bed <- lapply(rep_consistent_peaks, function(x) {
 lapply(names(pl_bed),
        function(x) write.table(pl_bed[x], file=paste(paste0(path,x),"bed",sep="."), sep = "\t", 
                               quote=F, row.names=F,col.names=c("#chr","start","end","name","strand")))
+```
+<br>
 
 
+#### Get read counts for merged peak sets from bam files
++ ran ChIPQC on Orchestra module `stats/R/3.2.1`, out of folder `/groups/cbdm-db/jrd26/ATAC_crossbatch/temp`
++ used separate script that will loop over pairs of peak/bam files: `jd_chipqc_peaks.R`
++ for script to work, had to duplicate merged peak files and give each unique name, so appended "1" or "2"
++ output = .csv file for each replicate's read counts in its merged peak set
++ command:
++ `bsub -q priority -W 10:00 -R "rusage[mem=64000]" Rscript jd_chipqc_peaks.R`
+<br> 
+
+
+#### Generate tables of replicate read counts in merged peak sets
+```{r plot_reps_after_merge}
+#### -- import files ---------------------------------------------------------------------------------------------
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A8-all-samples/peaks/final-replicate-merge/reps-merged-with-counts/rep1/"
+
+# generate list of filenames
+fl <- list.files(path = path, pattern = ".csv", full.names = T)
+
+#### --read_peak_csv function ------------------------------------------------------------------------------------
+
+# function to take in file, extract sample info, and build table with read counts for each peak
+# ARGS:
+# file = filename, with full path name and extension
+read_peak_csv <- function(file){
+  # read in filename
+  fn <- unlist(strsplit(file, split="*//"))[2]
+  
+  # read in file
+  dat <- read.csv(file = file)
+  
+  # extract sample name info from filename
+  samplename1 <- unlist(strsplit(fn, "*.csv"))[[1]]
+  # remove number at end of name
+  samplename <- unlist(strsplit(samplename1, split = "[0-9]$"))
+  
+  # expand name vector so that length matches # of peaks in file
+  samplename <- rep(samplename, nrow(dat))
+  
+  # generate peaknames 
+  peaknames <- paste(samplename, "_peak_",1:nrow(dat),sep="")
+  
+  # make new df with peaks and reads
+  peak_df <- data.frame(Sample = samplename,
+                        dat[,c("seqnames","start","end")],
+                        rep1rpm = dat[,"rpm"],
+                        peakID = peaknames)
+}
+
+
+#### -- apply over file list ------------------------------------------------------------------------------------
+pl1 <- lapply(fl, read_peak_csv) #[p]eak[l]ist[1]
+
+
+#### -- get rpm for rep2 ----------------------------------------------------------------------------------------
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A8-all-samples/peaks/final-replicate-merge/reps-merged-with-counts/rep2/"
+
+# generate list of filenames
+fl <- list.files(path = path, pattern = ".csv", full.names = T)
+
+# read files into list of dfs
+datlist <- lapply(fl, read.csv)
+
+# loop over and extract rpm
+rpm2_list <- lapply(datlist, function(x) x$rpm)
+
+# add rep2 rpm to peak table
+pl2 <- list() #[p]eak[l]ist[2]
+for(i in 1:length(pl1)) {
+  pl2[[i]] <- cbind(pl1[[i]], rep2rpm = rpm2_list[[i]])
+}
+
+# change order of columns in peak table
+pl3 <- list()
+for(i in 1:length(pl2)) {
+  pl3[[i]] <- data.frame(pl2[[i]][,c(1:4,6,5,7)])
+}
+
+#### -- export list of peak tables -------------------------------------------------------------------------------
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A8-all-samples/peaks/final-replicate-merge/reps-merged-with-counts/"
+file <- "reps-merged-peaklist"
+save(pl3, file = paste0(path,file,".RDa"))
+
+```
+<br>
+
+
+#### Sanity check on genome browser
++ for each sample (cell type):
+  + compare peaks called in both reps (from merged file) vs peaks called in only one 
+  + sort peaks by rpm, validate strong and weak peaks
+  + if replicate read counts differ, validate that ChIPQC quantitation matches browser scale
++ look at some peaks across multiple samples (e.g. strongest mac in the tregs and vice versa)
++ used IGV and .bigwig files 
++ so far, colonNrp1n
+<br>
+
+
+#### Plot replicate pair-wise correlations of read counts in merged peak sets
+```{r plot_reps_corr}
+library(reshape2)
+library(scales)
+library(RColorBrewer)
+library(ggplot2)
+
+#### -- import list of peak tables -------------------------------------------------------------------------------
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A8-all-samples/peaks/final-replicate-merge/reps-merged-with-counts/"
+file <- "reps-merged-peaklist"
+load(pl3, file = paste0(path,file,".RDa"))
 
 
 ```
-  
-  
+<br>
+
+
+<br>
+```{r test}
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A8-all-samples/testing/"
+peaks <- list.files(path=path,pattern = "*.bed.txt")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
   
