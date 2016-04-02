@@ -851,6 +851,14 @@ for(i in 1:length(pl2)) {
   pl3[[i]] <- data.frame(pl2[[i]][,c(1:4,6,5,7)])
 }
 
+# name elements of list
+# generate list of filenames
+fl <- list.files(path = path, pattern = ".csv", full.names = T)
+fn <- lapply(fl, function(x) unlist(strsplit(x, split="*//"))[2])
+fn <- unlist(lapply(fn, function(x) unlist(strsplit(x, split="*.csv"))[1]))
+
+names(pl3) <- fn 
+
 #### -- export list of peak tables -------------------------------------------------------------------------------
 path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A8-all-samples/peaks/final-replicate-merge/reps-merged-with-counts/"
 file <- "reps-merged-peaklist"
@@ -867,7 +875,8 @@ save(pl3, file = paste0(path,file,".RDa"))
   + if replicate read counts differ, validate that ChIPQC quantitation matches browser scale
 + look at some peaks across multiple samples (e.g. strongest mac in the tregs and vice versa)
 + used IGV and .bigwig files 
-+ so far, colonNrp1n
++ so far, colonNrp1n, mus, 
++ anecdotally, are peaks only called in one are convincing in both reps
 <br>
 
 
@@ -881,7 +890,29 @@ library(ggplot2)
 #### -- import list of peak tables -------------------------------------------------------------------------------
 path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A8-all-samples/peaks/final-replicate-merge/reps-merged-with-counts/"
 file <- "reps-merged-peaklist"
-load(pl3, file = paste0(path,file,".RDa"))
+load(file = paste0(path,file,".RDa"))
+
+#### -- get into shape for plotting -------------------------------------------------------------------------------
+plm <- melt(pl3, id.vars=names(pl3[[1]]))[-8] #[p]eak[l]ist[m]elted
+
+# calculate vector of r2 values
+reps_pearson <- unlist(lapply(pl3, function(x) cor(x$rep1rpm,x$rep2rpm)))
+
+# save
+path <- "/Volumes/JD_WD2/JRD_CBDMLab/1_JRD_CBDM_PROJECTS/ProjectFolders/T-TregEpigenome/Data/1_Experimental/ATAC/Analyses/A8-all-samples/plots/"
+png(filename = paste0(path,"rep_scatter_with_cor",".png"), width=1000, height=1000)
+
+g <- ggplot(plm, aes(x= log(rep1rpm,2), y= log(rep2rpm,2), color = seqnames))
+g + 
+  geom_point(size=0.6, alpha=0.6) + 
+  facet_wrap(~Sample) + 
+  xlab("Rep1 log2 rpm") +
+  ylab("Rep2 log2 rpm") + 
+  #annotate with cor
+  #add pretty breaks
+  #change color to fill?
+  theme_bw()
+dev.off()
 
 
 ```
